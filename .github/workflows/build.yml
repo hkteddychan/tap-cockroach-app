@@ -52,6 +52,11 @@ jobs:
           touch assets/audio/.gitkeep
           touch assets/fonts/.gitkeep
 
+      - name: Debug build info
+        run: |
+          flutter --version
+          flutter doctor -v
+
       - name: Build debug APK
         run: flutter build apk --debug
 
