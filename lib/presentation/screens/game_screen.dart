@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../game/game_provider.dart';
 import '../../game/components/cockroach_widget.dart';
+import '../../data/models/game_models.dart';
 
 class GameScreen extends StatefulWidget {
   final int level;
@@ -17,50 +19,70 @@ class GameScreen extends StatefulWidget {
 
 class _GameScreenState extends State<GameScreen> {
   late GameProvider _gameProvider;
+  Timer? _spawnTimer;
+  Timer? _gameTimer;
 
   @override
   void initState() {
     super.initState();
     _gameProvider = GameProvider();
-    _gameProvider.onGameOver = widget.onLose;
+    _gameProvider.onGameOver = () {
+      if (_gameProvider.score >= _gameProvider.levelConfig.targetScore) {
+        widget.onWin();
+      } else {
+        widget.onLose();
+      }
+    };
     _gameProvider.startGame(widget.level);
-    _startSpawnTimer();
-    _startGameTimer();
   }
 
-  void _startSpawnTimer() {
-    Future.doWhile(() async {
-      if (!_gameProvider.isPlaying) return false;
-      await Future.delayed(Duration(milliseconds: (1000 / _gameProvider.levelConfig.spawnRate * 1000).round()));
+  void _startTimers() {
+    _stopTimers();
+
+    // Spawn timer - use spawnRate as cockroaches per second
+    final spawnInterval = Duration(milliseconds: (1000 / _gameProvider.levelConfig.spawnRate).round());
+    _spawnTimer = Timer.periodic(spawnInterval, (_) {
       if (_gameProvider.isPlaying && !_gameProvider.isPaused) {
         _gameProvider.spawnCockroach();
       }
-      return _gameProvider.isPlaying;
     });
-  }
 
-  void _startGameTimer() {
-    Future.doWhile(() async {
-      await Future.delayed(const Duration(seconds: 1));
-      if (!_gameProvider.isPlaying) return false;
+    // Game timer - tick every second
+    _gameTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!_gameProvider.isPlaying) return;
       if (!_gameProvider.isPaused) {
         _gameProvider.timeLeft--;
         if (_gameProvider.timeLeft <= 0) {
           _gameProvider.onTimeUp();
-          return false;
-        }
-        if (_gameProvider.checkWin()) {
+          _stopTimers();
+        } else if (_gameProvider.checkWin()) {
           _gameProvider.onWin();
-          widget.onWin();
-          return false;
+          _stopTimers();
         }
       }
-      return _gameProvider.isPlaying;
     });
+  }
+
+  void _stopTimers() {
+    _spawnTimer?.cancel();
+    _spawnTimer = null;
+    _gameTimer?.cancel();
+    _gameTimer = null;
+  }
+
+  void _onTap(int id, Offset position) {
+    _gameProvider.onCockroachTap(id, position);
   }
 
   @override
   Widget build(BuildContext context) {
+    // Start timers when widget builds
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_gameProvider.isPlaying && _spawnTimer == null) {
+        _startTimers();
+      }
+    });
+
     return ChangeNotifierProvider.value(
       value: _gameProvider,
       child: Scaffold(
@@ -88,11 +110,22 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
-  void _onTap(int id, Offset position) {
-    _gameProvider.onCockroachTap(id, position);
+  void _restartGame() {
+    _stopTimers();
+    _gameProvider.startGame(widget.level);
+    _startTimers();
   }
 
   Widget _buildBackground() {
+    // Level 1 has custom background
+    if (widget.level == 1) {
+      return Positioned.fill(
+        child: Image.asset(
+          'assets/images/level1_bg.jpg',
+          fit: BoxFit.cover,
+        ),
+      );
+    }
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -135,8 +168,11 @@ class _GameScreenState extends State<GameScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _pauseBtn('⏸️', game.togglePause),
-            _pauseBtn('🔄', () => _gameProvider.startGame(widget.level)),
+            _pauseBtn('⏸️', () {
+              _gameProvider.togglePause();
+              setState(() {});
+            }),
+            _pauseBtn('🔄', _restartGame),
             _pauseBtn('🏠', widget.onMenu),
           ],
         ),
@@ -178,7 +214,10 @@ class _GameScreenState extends State<GameScreen> {
 
   Widget _buildPauseOverlay(GameProvider game) {
     return GestureDetector(
-      onTap: game.togglePause,
+      onTap: () {
+        _gameProvider.togglePause();
+        setState(() {});
+      },
       child: Container(
         color: Colors.black87,
         child: Center(
@@ -189,11 +228,15 @@ class _GameScreenState extends State<GameScreen> {
               const SizedBox(height: 24),
               const Text('遊戲暫停', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
               const SizedBox(height: 40),
-              _pauseMenuBtn('▶️ 繼續', game.togglePause),
+              _pauseMenuBtn('▶️ 繼續', () {
+                _gameProvider.togglePause();
+                setState(() {});
+              }),
               const SizedBox(height: 16),
               _pauseMenuBtn('🔄 重新開始', () {
-                game.togglePause();
-                _gameProvider.startGame(widget.level);
+                _gameProvider.togglePause();
+                _restartGame();
+                setState(() {});
               }),
               const SizedBox(height: 16),
               _pauseMenuBtn('🏠 主頁', widget.onMenu),
@@ -220,6 +263,7 @@ class _GameScreenState extends State<GameScreen> {
 
   @override
   void dispose() {
+    _stopTimers();
     _gameProvider.dispose();
     super.dispose();
   }
