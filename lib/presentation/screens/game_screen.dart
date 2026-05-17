@@ -135,7 +135,7 @@ class _GameScreenState extends State<GameScreen> {
             return Stack(
               children: [
                 _buildBackground(game),
-                SafeArea(child: Column(children=[
+                SafeArea(child: Column(children: [
                   _buildHUD(game),
                   Expanded(child: _buildPlayArea(game)),
                 ])),
