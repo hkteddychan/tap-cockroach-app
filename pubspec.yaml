@@ -1,7 +1,7 @@
 name: tap_cockroach
-description: Tap Cockroach Flutter game
+description: 蟲族逆襲：香港除菌風暴 — 陳蒨妤的除蟲大冒險
 publish_to: 'none'
-version: 1.0.0+1
+version: 2.0.0+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -19,5 +19,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  assets:
-    - assets/images/
