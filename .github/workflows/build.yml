@@ -69,37 +69,60 @@ jobs:
 
       - name: Build debug APK
         run: |
-          flutter build apk --debug 2>&1 | tee build_output.txt
-          echo "EXIT_CODE=$?" >> build_output.txt
-          exit ${PIPESTATUS[0]}
+          flutter build apk --debug
+          echo "=== APK Directory ===" 
+          find build -name "*.apk" -type f
+          ls -la build/app/outputs/flutter-apk/ 2>/dev/null || echo "Directory not found"
 
-      - name: Upload APK
-        if: always()
+      - name: Debug - Find APK files
+        run: |
+          echo "=== Looking for APK files ==="
+          find . -name "*.apk" -type f 2>/dev/null || echo "No APK found"
+          echo "=== Build dir ==="
+          ls -la build/app/outputs/flutter-apk/ 2>/dev/null || echo "Path not found"
+          echo "=== Alternative paths ==="
+          ls -la build/app/ 2>/dev/null || echo "build/app not found"
+          ls -la build/ 2>/dev/null || echo "build/ not found"
+
+      - name: Upload debug APK
+        if: success()
+        run: |
+          APK_PATH=$(find build -name "*.apk" -type f | head -1)
+          echo "Uploading: $APK_PATH"
+          if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
+            echo "APK exists: $(ls -lh $APK_PATH)"
+          else
+            echo "ERROR: No APK found!"
+            exit 1
+          fi
+        continue-on-error: true
+
+      - name: Upload debug APK (v2)
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: tap-cockroach-debug
           path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 14
 
-      - name: Upload build output
-        if: always()
+      - name: Upload debug APK (find v2)
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: build-output
-          path: build_output.txt
-          retention-days: 3
+          name: tap-cockroach-debug-alt
+          path: |
+            build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 14
+          compression-level: 0
 
       - name: Build release APK
         if: always()
         run: |
-          flutter build apk --release 2>&1 | tee release_output.txt
-          echo "EXIT_CODE=$?" >> release_output.txt
-          exit ${PIPESTATUS[0]}
-        env:
-          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          flutter build apk --release 2>&1 | tee release_build.txt
+          echo "EXIT_CODE=$?" >> release_build.txt
+          echo "=== APK Directory ===" 
+          find build -name "*.apk" -type f
+          ls -la build/app/outputs/flutter-apk/ 2>/dev/null || echo "Directory not found"
 
       - name: Upload release APK
         if: always()
@@ -109,19 +132,10 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
 
-      - name: Upload release output
+      - name: Upload release build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: release-output
-          path: release_output.txt
+          path: release_build.txt
           retention-days: 3
-
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-        uses: softprops/action-gh-release@v1
-        with:
-          files: build/app/outputs/flutter-apk/app-release.apk
-          draft: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
