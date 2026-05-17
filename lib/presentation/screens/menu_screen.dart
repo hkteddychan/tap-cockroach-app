@@ -5,8 +5,6 @@ import '../../data/models/game_models.dart';
 import '../../game/game_provider.dart';
 import 'game_screen.dart';
 import 'skill_tree_screen.dart';
-import 'pet_screen.dart';
-import 'achievement_screen.dart';
 
 class MenuScreen extends StatefulWidget {
   const MenuScreen({super.key});
