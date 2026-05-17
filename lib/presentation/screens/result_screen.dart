@@ -1,63 +1,52 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import '../../core/theme/app_theme.dart';
 
 class ResultScreen extends StatelessWidget {
-  final int score;
-  final int hearts;
-  final int level;
   final bool isWin;
-  final bool isGameOver;
-  final int highScore;
+  final int score;
+  final int level;
   final VoidCallback onRetry;
-  final VoidCallback onNextLevel;
   final VoidCallback onMenu;
 
-  const ResultScreen({
-    super.key,
-    required this.score,
-    required this.hearts,
-    required this.level,
-    required this.isWin,
-    required this.isGameOver,
-    required this.highScore,
-    required this.onRetry,
-    required this.onNextLevel,
-    required this.onMenu,
-  });
-
-  int get _stars => hearts >= 2 ? (hearts >= 3 ? 3 : 2) : 1;
+  const ResultScreen({super.key, required this.isWin, required this.score, required this.level, required this.onRetry, required this.onMenu});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(gradient: AppTheme.backgroundGradient),
-      child: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: isWin ? [const Color(0xFF1A1A2E), const Color(0xFF0D3B1E)] : [const Color(0xFF1A1A2E), const Color(0xFF3B1A1A)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
             child: Column(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Title
-                _buildTitle(),
-                const SizedBox(height: 30),
-                // Stars
-                if (isWin) _buildStars(),
-                const SizedBox(height: 30),
-                // Score card
-                _buildScoreCard(),
-                const SizedBox(height: 40),
-                // Buttons
-                if (!isGameOver) ...[
-                  _buildButton('▶️ 下一關', AppTheme.primaryGradient, onNextLevel),
-                  const SizedBox(height: 12),
-                ],
-                if (isGameOver || isWin) ...[
-                  _buildButton('🔄 再試', AppTheme.cardGradient, onRetry),
-                  const SizedBox(height: 12),
-                ],
-                _buildButton('🏠 主頁', AppTheme.surfaceLight, onMenu),
+                Text(isWin ? '🏆' : '💀', style: const TextStyle(fontSize: 100)),
+                const SizedBox(height: 24),
+                Text(
+                  isWin ? '關卡 $level 完成！' : '遊戲結束',
+                  style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white12,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    '最終得分: $score',
+                    style: const TextStyle(color: Colors.amber, fontSize: 28, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(height: 48),
+                _buildBtn(isWin ? '下一關' : '再試一次', isWin ? Color(0xFF4ADE80) : Color(0xFFFF6B35), onRetry),
+                const SizedBox(height: 16),
+                _buildBtn('🏠 主頁', const Color(0xFF0F3460), onMenu),
               ],
             ),
           ),
@@ -66,157 +55,18 @@ class ResultScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildTitle() {
-    String title;
-    String emoji;
-    Color color;
-
-    if (isGameOver) {
-      title = 'GAME OVER';
-      emoji = '💀';
-      color = AppTheme.error;
-    } else if (isWin) {
-      title = level >= 10 ? '🎊 全部完成！' : '🎉 關卡完成！';
-      emoji = level >= 10 ? '🏆' : '⭐';
-      color = AppTheme.secondary;
-    }
-
-    return Column(
-      children: [
-        Text(emoji, style: const TextStyle(fontSize: 60))
-            .animate()
-            .scale(duration: 500.ms, curve: Curves.elasticOut),
-        const SizedBox(height: 16),
-        ShaderMask(
-          shaderCallback: (bounds) => LinearGradient(
-            colors: [color, color.withOpacity(0.7)],
-          ).createShader(bounds),
-          child: Text(
-            title,
-            style: const TextStyle(
-              fontSize: 32,
-              fontWeight: FontWeight.w900,
-              color: Colors.white,
-            ),
-          ),
-        ).animate().fadeIn(delay: 200.ms).slideY(begin: -0.3),
-      ],
-    );
-  }
-
-  Widget _buildStars() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(3, (i) {
-        final isEarned = i < _stars;
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Text(
-            isEarned ? '⭐' : '☆',
-            style: TextStyle(
-              fontSize: 48,
-              color: isEarned ? null : Colors.white.withOpacity(0.3),
-            ),
-          ).animate(delay: (i * 200).ms)
-            .scale(begin: const Offset(0, 0), duration: 400.ms, curve: Curves.elasticOut),
-        );
-      }),
-    );
-  }
-
-  Widget _buildScoreCard() {
-    final isNewHighScore = score >= highScore && score > 0;
-    
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: AppTheme.cardGradient,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: AppTheme.cardShadow,
-        border: isNewHighScore
-            ? Border.all(color: AppTheme.secondary, width: 2)
-            : null,
-      ),
-      child: Column(
-        children: [
-          if (isNewHighScore) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              decoration: BoxDecoration(
-                gradient: AppTheme.goldGradient,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Text(
-                '🎯 新紀錄！',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ).animate().scale(),
-            const SizedBox(height: 16),
-          ],
-          _buildStatRow('分數', '$score', AppTheme.secondary),
-          const SizedBox(height: 12),
-          _buildStatRow('生命', '$hearts / 3', hearts >= 2 ? AppTheme.success : AppTheme.error),
-          if (!isGameOver) ...[
-            const SizedBox(height: 12),
-            _buildStatRow('關卡', '第$level關', AppTheme.primary),
-          ],
-        ],
-      ),
-    ).animate().fadeIn(delay: 400.ms).slideY(begin: 0.2);
-  }
-
-  Widget _buildStatRow(String label, String value, Color color) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.7),
-            fontSize: 16,
-          ),
-        ),
-        Text(
-          value,
-          style: TextStyle(
-            color: color,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildButton(String text, Gradient gradient, VoidCallback onTap) {
-    return Container(
-      width: double.infinity,
-      height: 56,
-      decoration: BoxDecoration(
-        gradient: gradient,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppTheme.cardShadow,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
+  Widget _buildBtn(String text, Color color, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 18),
+        decoration: BoxDecoration(
+          color: color,
           borderRadius: BorderRadius.circular(16),
-          child: Center(
-            child: Text(
-              text,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-          ),
+          boxShadow: [BoxShadow(color: color.withOpacity(0.4), blurRadius: 20, spreadRadius: 2)],
         ),
+        child: Text(text, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
       ),
-    ).animate().fadeIn(delay: 600.ms).slideX(begin: -0.2);
+    );
   }
 }

@@ -1,293 +1,157 @@
-import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
-import '../../data/models/game_models.dart';
-import '../components/cockroach_widget.dart';
+import '../data/models/game_models.dart';
 
 class GameProvider extends ChangeNotifier {
-  LevelConfig get currentLevel => LevelConfig.levels[_currentLevel - 1];
-  int _currentLevel = 1;
-  int get currentLevelIndex => _currentLevel - 1;
-  
-  final GameStats stats = GameStats();
-  final Random _random = Random();
-  
-  bool _isPlaying = false;
-  bool get isPlaying => _isPlaying;
-  
-  Timer? _spawnTimer;
-  Timer? _gameTimer;
-  int _timeLeft = 0;
-  int get timeLeft => _timeLeft;
-  
-  int _cockroachesSpawned = 0;
-  int _cockroachesOnScreen = 0;
-  
-  final List<CockroachData> _activeCockroaches = [];
-  List<CockroachData> get activeCockroaches => List.unmodifiable(_activeCockroaches);
-  
-  Function(int score, int combo, Offset position)? onScorePopup;
-  Function(int combo)? onComboPopup;
-  Function()? onLevelComplete;
-  Function(String reason)? onGameOver;
-  Function(int heart)? onHeartChange;
-  
-  int _currentScore = 0;
-  int get currentScore => _currentScore;
+  int currentLevel = 1;
+  int score = 0;
+  int lives = 3;
+  int timeLeft = 60;
+  double combo = 1.0;
+  int comboCount = 0;
+  bool isPaused = false;
+  bool isPlaying = false;
+  String? gameOverReason;
+  VoidCallback? onGameOver;
+
+  List<CockroachData> activeCockroaches = [];
+  int _cockroachIdCounter = 0;
+
+  LevelConfig get levelConfig => LevelConfig.levels[currentLevel - 1];
 
   void startGame(int level) {
-    _currentLevel = level.clamp(1, 10);
-    stats.reset();
-    _activeCockroaches.clear();
-    _cockroachesSpawned = 0;
-    _cockroachesOnScreen = 0;
-    _currentScore = 0;
-    _timeLeft = currentLevel.timeSeconds;
-    _isPlaying = true;
-    
-    _startGameTimer();
-    _scheduleSpawn();
+    currentLevel = level;
+    score = 0;
+    lives = LevelConfig.levels[level - 1].lives;
+    timeLeft = LevelConfig.levels[level - 1].timeLimit;
+    combo = 1.0;
+    comboCount = 0;
+    isPaused = false;
+    isPlaying = true;
+    gameOverReason = null;
+    activeCockroaches.clear();
+    _cockroachIdCounter = 0;
     notifyListeners();
   }
 
-  void _startGameTimer() {
-    _gameTimer?.cancel();
-    _gameTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!_isPlaying) return;
-      
-      _timeLeft--;
-      notifyListeners();
-      
-      if (_timeLeft <= 0) {
-        _gameOver('時間到！');
-      }
-    });
-  }
+  void spawnCockroach() {
+    if (!isPlaying || isPaused) return;
+    final config = levelConfig;
+    final random = DateTime.now().millisecondsSinceEpoch % 100;
 
-  void _scheduleSpawn() {
-    if (!_isPlaying) return;
-    if (_cockroachesSpawned >= currentLevel.cockroachCount) return;
-    
-    final delay = currentLevel.spawnIntervalMs;
-    _spawnTimer = Timer(Duration(milliseconds: delay), () {
-      if (_isPlaying && _cockroachesSpawned < currentLevel.cockroachCount) {
-        _spawnCockroach();
-        _scheduleSpawn();
-      }
-    });
-  }
+    CockroachType type;
+    if (random < config.goldenChance) {
+      type = CockroachType.golden;
+    } else if (random < config.giantChance) {
+      type = CockroachType.giant;
+    } else if (random < config.fastChance) {
+      type = CockroachType.fast;
+    } else {
+      type = CockroachType.normal;
+    }
 
-  void _spawnCockroach() {
-    if (!_isPlaying) return;
-    
-    final config = CockroachConfig.getRandom();
     final cockroach = CockroachData(
-      id: DateTime.now().millisecondsSinceEpoch,
-      config: config,
-      position: _getRandomPosition(config),
-      velocity: _getRandomVelocity(config.speedMultiplier),
-      isSlowed: _random.nextDouble() < currentLevel.slowChance,
-      slowEndTime: _random.nextDouble() < currentLevel.slowChance 
-          ? DateTime.now().add(Duration(milliseconds: (currentLevel.slowDurationSec * 1000).toInt()))
-          : null,
+      id: _cockroachIdCounter++,
+      type: type,
+      position: Offset(
+        50 + (DateTime.now().millisecondsSinceEpoch % 300).toDouble(),
+        150 + (DateTime.now().millisecondsSinceEpoch % 400).toDouble(),
+      ),
+      speed: _getSpeed(type),
+      points: _getPoints(type),
+      createdAt: DateTime.now(),
     );
-    
-    _activeCockroaches.add(cockroach);
-    _cockroachesSpawned++;
-    _cockroachesOnScreen++;
+
+    activeCockroaches.add(cockroach);
     notifyListeners();
   }
 
-  Offset _getRandomPosition(CockroachConfig config) {
-    final size = config.type == CockroachType.giant ? 80.0 : 60.0;
-    return Offset(
-      _random.nextDouble() * (300 - size),
-      _random.nextDouble() * (500 - size) + 100,
-    );
-  }
-
-  Offset _getRandomVelocity(double speedMultiplier) {
-    final speed = 2.0 * speedMultiplier * currentLevel.cockroachSpeed;
-    return Offset(
-      (_random.nextDouble() - 0.5) * speed * 2,
-      (_random.nextDouble() - 0.5) * speed * 2,
-    );
-  }
-
-  void updateCockroaches() {
-    if (!_isPlaying) return;
-    
-    final now = DateTime.now();
-    final toRemove = <int>[];
-    
-    for (final cockroach in _activeCockroaches) {
-      // Check slow effect
-      bool isSlowed = cockroach.isSlowed && 
-          (cockroach.slowEndTime == null || cockroach.slowEndTime!.isAfter(now));
-      
-      double speedMult = isSlowed ? 0.3 : 1.0;
-      
-      // Update position
-      double newX = cockroach.position.dx + cockroach.velocity.dx * speedMult;
-      double newY = cockroach.position.dy + cockroach.velocity.dy * speedMult;
-      
-      // Bounce off walls
-      double vx = cockroach.velocity.dx;
-      double vy = cockroach.velocity.dy;
-      
-      if (newX < 10 || newX > 290) {
-        vx *= -1;
-        newX = newX.clamp(10, 290);
-      }
-      if (newY < 80 || newY > 520) {
-        vy *= -1;
-        newY = newY.clamp(80, 520);
-      }
-      
-      // Random direction change
-      if (_random.nextDouble() < 0.02) {
-        vx += (_random.nextDouble() - 0.5) * 1.5;
-        vy += (_random.nextDouble() - 0.5) * 1.5;
-      }
-      
-      cockroach.position = Offset(newX, newY);
-      cockroach.velocity = Offset(vx.clamp(-5, 5), vy.clamp(-5, 5));
-      cockroach.facingRight = vx > 0;
+  double _getSpeed(CockroachType type) {
+    final base = levelConfig.cockroachSpeed;
+    switch (type) {
+      case CockroachType.fast:
+        return base * 1.8;
+      case CockroachType.giant:
+        return base * 0.5;
+      case CockroachType.golden:
+        return base * 1.2;
+      default:
+        return base;
     }
-    
-    notifyListeners();
   }
 
-  void onCockroachTap(int id, Offset tapPosition) {
-    if (!_isPlaying) return;
-    
-    final index = _activeCockroaches.indexWhere((c) => c.id == id);
-    if (index == -1) return;
-    
-    final cockroach = _activeCockroaches[index];
-    _activeCockroaches.removeAt(index);
-    _cockroachesOnScreen--;
-    stats.cockroachesKilled++;
-    
-    // Score calculation
-    stats.combo++;
-    if (stats.combo > stats.maxCombo) stats.maxCombo = stats.combo;
-    
-    int bonus = 0;
-    if (stats.combo >= 10) bonus = 50;
-    else if (stats.combo >= 5) bonus = 25;
-    else if (stats.combo >= 3) bonus = 10;
-    else if (stats.combo >= 2) bonus = 5;
-    
-    final totalScore = cockroach.config.score + bonus;
-    _currentScore += totalScore;
-    
-    // Callbacks
-    onScorePopup?.call(totalScore, stats.combo, tapPosition);
-    if (stats.combo >= 2) {
-      onComboPopup?.call(stats.combo);
+  int _getPoints(CockroachType type) {
+    final base = levelConfig.pointsPerCockroach;
+    switch (type) {
+      case CockroachType.fast:
+        return (base * 1.5).round();
+      case CockroachType.giant:
+        return (base * 3).round();
+      case CockroachType.golden:
+        return (base * 5).round();
+      default:
+        return base;
     }
-    
-    notifyListeners();
-    _checkWinCondition();
+  }
+
+  void onCockroachTap(int id, Offset position) {
+    final index = activeCockroaches.indexWhere((c) => c.id == id);
+    if (index != -1) {
+      final cockroach = activeCockroaches[index];
+      score += (cockroach.points * combo).round();
+      comboCount++;
+
+      if (comboCount >= 5) {
+        combo = 2.0;
+      } else if (comboCount >= 3) {
+        combo = 1.5;
+      }
+
+      activeCockroaches.removeAt(index);
+      notifyListeners();
+    }
   }
 
   void onCockroachEscape(int id) {
-    if (!_isPlaying) return;
-    
-    final index = _activeCockroaches.indexWhere((c) => c.id == id);
-    if (index == -1) return;
-    
-    _activeCockroaches.removeAt(index);
-    _cockroachesOnScreen--;
-    stats.combo = 0;
-    stats.hearts--;
-    
-    onHeartChange?.call(stats.hearts);
-    notifyListeners();
-    
-    if (stats.hearts <= 0) {
-      _gameOver('漏晒啲蟲！');
-    } else {
-      _checkWinCondition();
-    }
-  }
+    final index = activeCockroaches.indexWhere((c) => c.id == id);
+    if (index != -1) {
+      activeCockroaches.removeAt(index);
+      lives--;
 
-  void _checkWinCondition() {
-    if (stats.cockroachesKilled >= currentLevel.cockroachCount && 
-        _cockroachesSpawned >= currentLevel.cockroachCount) {
-      _levelComplete();
-    }
-  }
+      if (comboCount >= 3) {
+        comboCount = 0;
+        combo = 1.0;
+      }
 
-  void _levelComplete() {
-    _isPlaying = false;
-    _spawnTimer?.cancel();
-    _gameTimer?.cancel();
-    
-    stats.totalScore += _currentScore;
-    stats.totalKillsAll += stats.cockroachesKilled;
-    if (_currentScore > stats.highScore) stats.highScore = _currentScore;
-    if (_currentLevel >= stats.unlockedLevel && _currentLevel < 10) {
-      stats.unlockedLevel = _currentLevel + 1;
-    }
-    
-    onLevelComplete?.call();
-    notifyListeners();
-  }
-
-  void _gameOver(String reason) {
-    _isPlaying = false;
-    _spawnTimer?.cancel();
-    _gameTimer?.cancel();
-    
-    stats.totalScore += _currentScore;
-    stats.totalKillsAll += stats.cockroachesKilled;
-    if (_currentScore > stats.highScore) stats.highScore = _currentScore;
-    
-    onGameOver?.call(reason);
-    notifyListeners();
-  }
-
-  void pauseGame() {
-    _isPlaying = false;
-    _spawnTimer?.cancel();
-    _gameTimer?.cancel();
-    notifyListeners();
-  }
-
-  void resumeGame() {
-    if (_timeLeft > 0) {
-      _isPlaying = true;
-      _startGameTimer();
-      _scheduleSpawn();
+      if (lives <= 0) {
+        gameOverReason = '生命歸零！';
+        if (onGameOver != null) onGameOver!();
+      }
       notifyListeners();
     }
   }
 
+  void togglePause() {
+    isPaused = !isPaused;
+    notifyListeners();
+  }
+
+  void onTimeUp() {
+    gameOverReason = '時間到！';
+    if (onGameOver != null) onGameOver!();
+    notifyListeners();
+  }
+
+  void onWin() {
+    isPlaying = false;
+    notifyListeners();
+  }
+
+  bool checkWin() {
+    return score >= levelConfig.targetScore;
+  }
+
   void dispose() {
-    _spawnTimer?.cancel();
-    _gameTimer?.cancel();
+    activeCockroaches.clear();
     super.dispose();
   }
-}
-
-class CockroachData {
-  final int id;
-  final CockroachConfig config;
-  Offset position;
-  Offset velocity;
-  bool isSlowed;
-  DateTime? slowEndTime;
-  bool facingRight;
-
-  CockroachData({
-    required this.id,
-    required this.config,
-    required this.position,
-    required this.velocity,
-    this.isSlowed = false,
-    this.slowEndTime,
-    this.facingRight = true,
-  });
 }
