@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
-import '../../data/models/game_models.dart';
 import 'menu_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -57,7 +56,7 @@ class _SplashScreenState extends State<SplashScreen>
         ),
         child: Center(
           child: ListenableBuilder(
-            animation: _ctrl,
+            listenable: _ctrl,
             builder: (context, _) {
               return Opacity(
                 opacity: _fade.value,
