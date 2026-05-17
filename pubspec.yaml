@@ -19,3 +19,17 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/audio/sfx_tap.wav
+    - assets/audio/sfx_hit.wav
+    - assets/audio/sfx_kill.wav
+    - assets/audio/sfx_wave_start.wav
+    - assets/audio/sfx_wave_clear.wav
+    - assets/audio/sfx_game_win.wav
+    - assets/audio/sfx_game_lose.wav
+    - assets/audio/sfx_achievement.wav
+    - assets/audio/sfx_place_tower.wav
+    - assets/audio/sfx_gold.wav
+    - assets/audio/sfx_life_lost.wav
+    - assets/audio/sfx_boss_alert.wav
+    - assets/audio/bgm_gameplay.wav

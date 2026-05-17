@@ -5,6 +5,7 @@ import '../../data/models/game_models.dart';
 import '../../game/game_provider.dart';
 import 'game_screen.dart';
 import 'skill_tree_screen.dart';
+import 'td_game_screen.dart';
 
 class MenuScreen extends StatefulWidget {
   const MenuScreen({super.key});
@@ -361,7 +362,7 @@ class _MenuScreenState extends State<MenuScreen> {
   void _navigateToGame(int level) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => GameScreen(level: level),
+        builder: (_) => TDGameScreen(level: level),
       ),
     );
   }
