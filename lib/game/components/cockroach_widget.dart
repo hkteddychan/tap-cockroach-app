@@ -77,7 +77,7 @@ class _CockroachWidgetState extends State<CockroachWidget>
         _squishController.forward().then((_) => widget.onTap());
       },
       child: ListenableBuilder(
-        animation: Listenable.merge([_walkAnimation, _squishController]),
+        listenable: Listenable.merge([_walkAnimation, _squishController]),
         builder: (context, child) {
           final squish = _squishController.value;
           final scale = 1.0 - (squish * 0.3);
