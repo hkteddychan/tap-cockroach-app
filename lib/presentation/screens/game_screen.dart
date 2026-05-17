@@ -34,6 +34,8 @@ class _GameScreenState extends State<GameScreen> {
       }
     };
     _gameProvider.startGame(widget.level);
+    // Start timers directly after startGame() to ensure isPlaying is true
+    _startTimers();
   }
 
   void _startTimers() {
@@ -64,9 +66,10 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _stopTimers() {
+    // Cancel both timers before setting to null to ensure atomic cleanup
     _spawnTimer?.cancel();
-    _spawnTimer = null;
     _gameTimer?.cancel();
+    _spawnTimer = null;
     _gameTimer = null;
   }
 
@@ -76,13 +79,6 @@ class _GameScreenState extends State<GameScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Start timers when widget builds
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_gameProvider.isPlaying && _spawnTimer == null) {
-        _startTimers();
-      }
-    });
-
     return ChangeNotifierProvider.value(
       value: _gameProvider,
       child: Scaffold(

@@ -124,6 +124,7 @@ class GameProvider extends ChangeNotifier {
 
       if (lives <= 0) {
         gameOverReason = '生命歸零！';
+        isPlaying = false;
         if (onGameOver != null) onGameOver!();
       }
       notifyListeners();
