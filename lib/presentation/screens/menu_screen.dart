@@ -61,8 +61,8 @@ class _MenuScreenState extends State<MenuScreen> {
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: AppTheme.glowShadow,
                     ),
-                    child: const Center(
-                      child: Text(protagonist.emoji, style: TextStyle(fontSize: 28)),
+                    child: Center(
+                      child: Text(protagonist.emoji, style: const TextStyle(fontSize: 28)),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -203,7 +203,7 @@ class _MenuScreenState extends State<MenuScreen> {
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
+                      children: [
                         Text(
                           '《蟲族逆襲：香港除菌風暴》',
                           style: TextStyle(
