@@ -2,7 +2,7 @@
     <uses-permission android:name="android.permission.INTERNET"/>
 
     <application
-        android:label="Tap Cockroach"
+        android:label="蟲族逆襲：除菌風暴"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
