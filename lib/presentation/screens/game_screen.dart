@@ -19,7 +19,6 @@ class _GameScreenState extends State<GameScreen> {
   Timer? _spawnTimer;
   Timer? _gameTimer;
   Timer? _escapeTimer; // 蟑螂逃脫計時器
-  bool _showNewAchievements = false;
   Set<String> _newAchievements = {};
 
   @override
@@ -92,7 +91,6 @@ class _GameScreenState extends State<GameScreen> {
     _gameProvider.onLevelEnd(wasWin);
     _newAchievements = _gameProvider.getNewAchievements();
     if (_newAchievements.isNotEmpty) {
-      setState(() => _showNewAchievements = true);
     }
     _stopTimers();
 
