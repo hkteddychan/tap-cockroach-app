@@ -70,6 +70,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
     await _audioService.init();
     _audioService.playSfx(SoundType.waveStart);
     _gameProvider.startWave();
+    _gameProvider.onEnemyKilled = _onEnemyKilled; // wire kill audio callback
     _gameProvider.addListener(_onGameStateChanged);
   }
 
@@ -957,6 +958,9 @@ class TDGameProvider extends ChangeNotifier {
   int currentWave = 0;
   int totalWaves = 10;
   bool isPlaying = true;
+
+  // Callbacks to State (set during initState)
+  void Function(TDEnemy)? onEnemyKilled;
   
   // Objects
   List<TDTower> towers = [];
@@ -1275,7 +1279,7 @@ class TDGameProvider extends ChangeNotifier {
       projectiles.remove(p);
     }
     for (final e in enemiesToRemove) {
-      _onEnemyKilled(e); // play kill/achievement audio + add gold/score
+      onEnemyKilled?.call(e); // play kill audio + add gold/score (callback to State)
       enemies.remove(e);
     }
   }
