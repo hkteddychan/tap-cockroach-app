@@ -2039,7 +2039,10 @@ class TDGameProvider extends ChangeNotifier {
     currentWave++;
     _enemiesSpawnedThisWave = 0;
     _enemiesPerWave = 10 + (currentWave * 2);
-    
+
+    // Restart game loop (was cancelled by _checkWaveComplete on previous wave)
+    _startGameLoop();
+
     // Spawn enemies periodically
     final spawnInterval = 2000 - (currentWave * 100).clamp(0, 1500);
     _enemySpawnTimer?.cancel();
@@ -2051,11 +2054,7 @@ class TDGameProvider extends ChangeNotifier {
         _enemySpawnTimer?.cancel();
       }
     });
-    
-    // Start game loop for tower targeting
-    _startGameLoop();
   }
-
   void _spawnEnemy() {
     TDEnemyType type;
     final roll = Random().nextDouble();
