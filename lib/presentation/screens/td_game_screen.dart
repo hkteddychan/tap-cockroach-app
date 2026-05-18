@@ -637,7 +637,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
     final remaining = _tdProvider.enemiesRemaining;
     final total = _tdProvider.enemiesThisWave;
     final waveProgress = _tdProvider.waveProgress;
-    final nextWavePreview = currentWave < totalWaves ? '第 ${currentWave + 1} 波' : '最終波';
+    final nextWavePreview = currentWave < totalWaves - 1 ? '第 ${currentWave + 2} 波' : '最終波';
     final statusText = enemiesOnField > 0
         ? '剩餘 $remaining/$total'
         : (remaining > 0 ? '等待中 $remaining/$total' : '✅ 消滅完成！');
@@ -651,7 +651,6 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
       ),
       child: Row(
         children: [
-          // Wave counter
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
@@ -659,7 +658,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
-              '🌊 $currentWave/$totalWaves',
+              '🌊 ${currentWave + 1}/$totalWaves',
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 13,
@@ -1949,7 +1948,7 @@ class TDGameProvider extends ChangeNotifier {
   double combo = 1.0;
   int comboCount = 0;
   int currentWave = 0;
-  int totalWaves = 1; // Each level = 1 wave (自選 system)
+  int totalWaves = 10; // 10 waves per level
   bool isPlaying = true;
   bool _isPaused = false;
   double _gameSpeed = 1.0;
@@ -2017,16 +2016,16 @@ class TDGameProvider extends ChangeNotifier {
 
   void startWave([int? level]) {
     isPlaying = true;
-    // Use passed level, or keep current (for wave 1 init)
-    if (level != null) currentWave = level;
+    // Reset wave counter; level param is used for difficulty scaling
+    currentWave = 0;
     _enemiesSpawnedThisWave = 0;
-    _enemiesPerWave = 10 + (currentWave * 2); // Scale by level number
+    _enemiesPerWave = 10 + ((level ?? 1) * 2); // Scale by level (1-10)
 
     // Restart game loop (was cancelled by _checkWaveComplete on previous wave)
     _startGameLoop();
 
-    // Spawn enemies periodically
-    final spawnInterval = 2000 - (currentWave * 100).clamp(0, 1500);
+    // Spawn enemies periodically — interval scales with level (difficulty), not wave number
+    final spawnInterval = 2000 - ((level ?? 1) * 100).clamp(0, 1500);
     _enemySpawnTimer?.cancel();
     _enemySpawnTimer = Timer.periodic(Duration(milliseconds: spawnInterval), (_) {
       if (_enemiesSpawnedThisWave < _enemiesPerWave && isPlaying) {
@@ -2394,7 +2393,27 @@ class TDGameProvider extends ChangeNotifier {
         enemies.isEmpty &&
         _enemySpawnTimer?.isActive != true) {
       _gameLoopTimer?.cancel();
-      onWaveComplete?.call();
+      // Auto-progress through waves 1-10
+      if (currentWave < totalWaves - 1) {
+        currentWave++;
+        _enemiesSpawnedThisWave = 0;
+        _enemiesPerWave = 10 + ((widget.level) * 2);
+        _startGameLoop();
+        // Re-spawn enemies for next wave
+        final spawnInterval = 2000 - ((widget.level) * 100).clamp(0, 1500);
+        _enemySpawnTimer?.cancel();
+        _enemySpawnTimer = Timer.periodic(Duration(milliseconds: spawnInterval), (_) {
+          if (_enemiesSpawnedThisWave < _enemiesPerWave && isPlaying) {
+            _spawnEnemy();
+            _enemiesSpawnedThisWave++;
+          } else {
+            _enemySpawnTimer?.cancel();
+          }
+        });
+      } else {
+        // Wave 10 done — trigger level complete
+        onWaveComplete?.call();
+      }
     }
   }
 
