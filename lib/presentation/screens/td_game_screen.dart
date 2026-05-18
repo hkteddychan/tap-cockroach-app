@@ -70,7 +70,9 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
     await _audioService.init();
     _audioService.playSfx(SoundType.waveStart);
     _gameProvider.startWave();
-    _gameProvider.onEnemyKilled = _onEnemyKilled; // wire kill audio callback
+    _gameProvider.onEnemyKilled = _onEnemyKilled;
+    _gameProvider.onEnemyReachEnd = _onEnemyReachEnd;
+    _gameProvider.onWaveComplete = _handleWaveComplete;
     _gameProvider.addListener(_onGameStateChanged);
   }
 
@@ -135,7 +137,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
     _gameProvider.addScore(enemy.points);
     _gameProvider.incrementCombo();
     _audioService.playSfx(SoundType.kill);
-    if (_gameProvider.combo >= 10) {
+    if (_gameProvider.comboCount >= 10) {
       _audioService.playSfx(SoundType.achievement);
     }
   }
@@ -961,6 +963,8 @@ class TDGameProvider extends ChangeNotifier {
 
   // Callbacks to State (set during initState)
   void Function(TDEnemy)? onEnemyKilled;
+  void Function()? onWaveComplete;
+  void Function(TDEnemy)? onEnemyReachEnd;
   
   // Objects
   List<TDTower> towers = [];
@@ -1158,8 +1162,10 @@ class TDGameProvider extends ChangeNotifier {
   void _updateTowers() {
     for (final tower in towers) {
       final now = DateTime.now();
+      // fireRate = shots per second (e.g. 0.5 = 1 shot every 2 seconds)
+      final cooldownMs = (1000 / tower.fireRate).round();
       if (tower.lastFireTime != null &&
-          now.difference(tower.lastFireTime!).inMilliseconds < (1000 / tower.fireRate).round()) {
+          now.difference(tower.lastFireTime!).inMilliseconds < cooldownMs) {
         continue;
       }
 
@@ -1285,8 +1291,10 @@ class TDGameProvider extends ChangeNotifier {
   }
 
   void _removeDeadEnemies() {
+    // Handle escaped enemies: fire callback to State (screen shake + audio), then lose life
     final escaped = enemies.where((e) => e.pathProgress >= _waypoints.length - 1).toList();
     for (final e in escaped) {
+      onEnemyReachEnd?.call(e); // State: play lifeLost sound + screen shake
       loseLife();
     }
     enemies.removeWhere((e) =>
@@ -1295,11 +1303,12 @@ class TDGameProvider extends ChangeNotifier {
   }
 
   void _checkWaveComplete() {
-    if (_enemiesSpawnedThisWave >= _enemiesPerWave && 
-        enemies.isEmpty && 
+    if (_enemiesSpawnedThisWave >= _enemiesPerWave &&
+        enemies.isEmpty &&
         _enemySpawnTimer?.isActive != true) {
       _gameLoopTimer?.cancel();
-      // Wave complete - handled by screen
+      // Fire wave-complete callback to State (shows banner + starts next wave or victory)
+      onWaveComplete?.call();
     }
   }
 
