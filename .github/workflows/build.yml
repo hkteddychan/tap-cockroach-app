@@ -66,12 +66,22 @@ jobs:
         run: |
           echo "=== BUILD START ==="
           flutter pub get
-          flutter build apk --debug 2>&1 | tee build_debug.log
-          echo "EXIT_CODE=$?" >> build_debug.log
-          echo "=== APK FILES ===" >> build_debug.log
-          ls -la build/app/outputs/flutter-apk/ >> build_debug.log 2>&1 || echo "No APK dir" >> build_debug.log
-          echo "=== BUILD END ==="
-          cat build_debug.log
+          flutter build apk --debug
+          EXITCODE=$?
+          echo "EXIT_CODE=$EXITCODE"
+          if [ $EXITCODE -ne 0 ]; then
+            echo "=== DEBUG BUILD FAILED WITH EXIT CODE $EXITCODE ==="
+            exit $EXITCODE
+          fi
+          echo "=== Checking APK exists ==="
+          if [ -f build/app/outputs/flutter-apk/app-debug.apk ]; then
+            echo "APK found: $(ls -lh build/app/outputs/flutter-apk/app-debug.apk)"
+          else
+            echo "=== APK NOT FOUND! ==="
+            find build -name "*.apk" 2>/dev/null || echo "No APK files at all"
+            ls -la build/ 2>/dev/null || echo "build/ does not exist"
+            exit 1
+          fi
 
       - name: Upload debug APK
         if: success()
@@ -81,24 +91,25 @@ jobs:
           path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 14
 
-      - name: Upload debug build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-build-log
-          path: build_debug.log
-          retention-days: 3
-
       - name: Build release APK
         id: release_build
         run: |
           echo "=== BUILD START ==="
-          flutter build apk --release 2>&1 | tee build_release.log
-          echo "EXIT_CODE=$?" >> build_release.log
-          echo "=== APK FILES ===" >> build_release.log
-          ls -la build/app/outputs/flutter-apk/ >> build_release.log 2>&1 || echo "No APK dir" >> build_release.log
-          echo "=== BUILD END ==="
-          cat build_release.log
+          flutter build apk --release
+          EXITCODE=$?
+          echo "EXIT_CODE=$EXITCODE"
+          if [ $EXITCODE -ne 0 ]; then
+            echo "=== RELEASE BUILD FAILED WITH EXIT CODE $EXITCODE ==="
+            exit $EXITCODE
+          fi
+          echo "=== Checking APK exists ==="
+          if [ -f build/app/outputs/flutter-apk/app-release.apk ]; then
+            echo "APK found: $(ls -lh build/app/outputs/flutter-apk/app-release.apk)"
+          else
+            echo "=== APK NOT FOUND! ==="
+            find build -name "*.apk" 2>/dev/null || echo "No APK files at all"
+            exit 1
+          fi
 
       - name: Upload release APK
         if: always()
@@ -107,11 +118,3 @@ jobs:
           name: tap-cockroach-release
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
-
-      - name: Upload release build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-build-log
-          path: build_release.log
-          retention-days: 3
