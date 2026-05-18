@@ -1975,6 +1975,7 @@ class TDGameProvider extends ChangeNotifier {
   int _enemyIdCounter = 0;
   int _enemiesSpawnedThisWave = 0;
   int _enemiesPerWave = 10;
+  int _level = 1; // Store level (1-10) for difficulty scaling
   
   // Path waypoints (will be populated in init)
   final List<Offset> _waypoints = [];
@@ -2018,14 +2019,15 @@ class TDGameProvider extends ChangeNotifier {
     isPlaying = true;
     // Reset wave counter; level param is used for difficulty scaling
     currentWave = 0;
+    _level = level ?? 1;
     _enemiesSpawnedThisWave = 0;
-    _enemiesPerWave = 10 + ((level ?? 1) * 2); // Scale by level (1-10)
+    _enemiesPerWave = 10 + (_level * 2); // Scale by level (1-10)
 
     // Restart game loop (was cancelled by _checkWaveComplete on previous wave)
     _startGameLoop();
 
     // Spawn enemies periodically — interval scales with level (difficulty), not wave number
-    final spawnInterval = 2000 - ((level ?? 1) * 100).clamp(0, 1500);
+    final spawnInterval = 2000 - (_level * 100).clamp(0, 1500);
     _enemySpawnTimer?.cancel();
     _enemySpawnTimer = Timer.periodic(Duration(milliseconds: spawnInterval), (_) {
       if (_enemiesSpawnedThisWave < _enemiesPerWave && isPlaying) {
@@ -2397,10 +2399,10 @@ class TDGameProvider extends ChangeNotifier {
       if (currentWave < totalWaves - 1) {
         currentWave++;
         _enemiesSpawnedThisWave = 0;
-        _enemiesPerWave = 10 + ((widget.level) * 2);
+        _enemiesPerWave = 10 + (_level * 2);
         _startGameLoop();
         // Re-spawn enemies for next wave
-        final spawnInterval = 2000 - ((widget.level) * 100).clamp(0, 1500);
+        final spawnInterval = 2000 - (_level * 100).clamp(0, 1500);
         _enemySpawnTimer?.cancel();
         _enemySpawnTimer = Timer.periodic(Duration(milliseconds: spawnInterval), (_) {
           if (_enemiesSpawnedThisWave < _enemiesPerWave && isPlaying) {
