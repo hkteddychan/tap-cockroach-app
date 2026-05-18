@@ -362,7 +362,7 @@ class _MenuScreenState extends State<MenuScreen> {
   void _navigateToGame(int level) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => TDGameScreen(level: level, gameProvider: context.read<GameProvider>()),
+        builder: (_) => TDGameScreen(level: level),
       ),
     );
   }

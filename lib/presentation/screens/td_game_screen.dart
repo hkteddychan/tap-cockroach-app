@@ -66,15 +66,15 @@ class _KillParticle {
 
 class TDGameScreen extends StatefulWidget {
   final int level;
-  final GameProvider gameProvider;
-  const TDGameScreen({super.key, required this.level, required this.gameProvider});
+  const TDGameScreen({super.key, required this.level});
 
   @override
   State<TDGameScreen> createState() => _TDGameScreenState();
 }
 
 class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMixin, WidgetsBindingObserver {
-  late TDGameProvider _tdProvider; // local TD game state
+  late TDGameProvider _tdProvider; // local TD tower-defense game state
+  late GameProvider _parentProvider; // parent's GameProvider — used only for onLevelComplete()
   late AudioService _audioService;
   late AnimationController _rippleController;
   late AnimationController _shakeController;
@@ -124,7 +124,8 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
   @override
   void initState() {
     super.initState();
-    _tdProvider = widget.gameProvider;
+    _tdProvider = TDGameProvider(); // create fresh local TD game provider
+    _parentProvider = widget.gameProvider; // parent's provider for level completion
     _audioService = AudioService();
     
     _rippleController = AnimationController(
@@ -289,14 +290,14 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
     final score = _tdProvider.score;
 
     // Mark level complete and unlock next level
-    widget.gameProvider.gameState.onLevelComplete(
+    _parentProvider.gameState.onLevelComplete(
       completedLevel,
       score,
       0, // goldenCount (simplified)
       _perfectWave,
       0, // timeUsed (simplified)
     );
-    widget.gameProvider.saveState();
+    _parentProvider.saveState();
 
     // Show victory banner
     _showWaveCompleteBanner('🏆 第 $completedLevel 關完成！');
