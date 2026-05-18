@@ -56,7 +56,9 @@ jobs:
         run: |
           flutter --version
           flutter doctor -v 2>&1 | tee flutter_doctor.txt
-          flutter analyze 2>&1 | tee flutter_analyze.txt || true
+          flutter analyze --no-fatal-infos --no-fatal-warnings 2>&1 | tee flutter_analyze.txt
+          echo "=== EXIT CODE ===" >> flutter_analyze.txt
+          echo $? >> flutter_analyze.txt
 
       - name: Upload diagnostics
         uses: actions/upload-artifact@v4
@@ -69,10 +71,20 @@ jobs:
 
       - name: Build debug APK
         run: |
-          flutter build apk --debug
-          echo "=== APK Directory ===" 
+          flutter clean
+          flutter pub get
+          flutter build apk --debug 2>&1 | tee debug_build.txt
+          echo "EXIT_CODE=$?" >> debug_build.txt
+          echo "=== APK Directory ==="
           find build -name "*.apk" -type f
           ls -la build/app/outputs/flutter-apk/ 2>/dev/null || echo "Directory not found"
+
+      - name: Upload debug build log
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-output
+          path: debug_build.txt
+          retention-days: 3
 
       - name: Debug - Find APK files
         run: |
