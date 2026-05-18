@@ -71,7 +71,6 @@ jobs:
 
       - name: Build debug APK
         run: |
-          flutter clean
           flutter pub get
           flutter build apk --debug 2>&1 | tee debug_build.txt
           echo "EXIT_CODE=$?" >> debug_build.txt
