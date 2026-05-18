@@ -186,8 +186,9 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
       _displayScore = (_displayScore + ((_gameProvider.score - _displayScore) * 0.2).ceil().clamp(1, 100)).clamp(0, _gameProvider.score);
     }
     if (_displayGold < _gameProvider.gold) {
-      // Animate gold: fast catch-up (catch up 20% per frame, minimum 5 per tick)
-      _displayGold = (_displayGold + max(5, ((_gameProvider.gold - _displayGold) * 0.3).ceil())).clamp(0, _gameProvider.gold);
+      // Animate gold: fast catch-up on gain (catch up 30% per tick, min +5)
+      final delta = _gameProvider.gold - _displayGold;
+      _displayGold = (_displayGold + max(5, (delta * 0.3).ceil())).clamp(0, _gameProvider.gold).toInt();
     } else if (_displayGold > _gameProvider.gold) {
       // Instant sync when gold decreases (tower placed / upgrade / sell)
       _displayGold = _gameProvider.gold;
