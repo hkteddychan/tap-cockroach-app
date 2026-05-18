@@ -66,8 +66,9 @@ class _KillParticle {
 
 class TDGameScreen extends StatefulWidget {
   final int level;
-  const TDGameScreen({super.key, required this.level});
-
+  final GameProvider gameProvider;
+  const TDGameScreen({super.key, required this.level, required this.gameProvider});
+}
   @override
   State<TDGameScreen> createState() => _TDGameScreenState();
 }
