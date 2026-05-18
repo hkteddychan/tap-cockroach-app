@@ -318,7 +318,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
       });
     } else {
       _showWaveCompleteBanner('✅ 第 $completedWave 波完成');
-      if (_soundEnabled) _audioService.playSfx(SoundType.waveComplete);
+      if (_soundEnabled) _audioService.playSfx(SoundType.waveClear);
       Future.delayed(const Duration(milliseconds: 1500), () {
         if (mounted) {
           _showWaveStartBanner(nextWave);
@@ -1895,8 +1895,8 @@ class TDTower {
     int? damage,
     double? fireRate,
   })  : range = range ?? TDGameProvider.getTowerBaseRange(type),
-        damage = damage ?? TDGameProvider.getTowerStats(type)['damage']![0],
-        fireRate = fireRate ?? TDGameProvider.getTowerStats(type)['fireRate']![0],
+        damage = damage ?? (TDGameProvider.getTowerStats(type)['damage']![0] as int),
+        fireRate = fireRate ?? (TDGameProvider.getTowerStats(type)['fireRate']![0] as double),
         targetAngle = 0,
         muzzleFlashTime = 0;
 
@@ -1904,9 +1904,9 @@ class TDTower {
     if (level >= 3) return;
     level++;
     final stats = TDGameProvider.getTowerStats(type);
-    range = stats['range']![level - 1];
-    damage = stats['damage']![level - 1];
-    fireRate = stats['fireRate']![level - 1];
+    range = (stats['range']![level - 1] as double);
+    damage = (stats['damage']![level - 1] as int);
+    fireRate = (stats['fireRate']![level - 1] as double);
   }
 }
 
@@ -2240,8 +2240,8 @@ class TDGameProvider extends ChangeNotifier {
       // Global tower: hits all enemies (no range check)
       if (tower.type == TDTowerType.global && enemies.isNotEmpty) {
         for (final enemy in enemies) {
-          if (enemy.pathProgress >= closestDist) {
-            closestDist = enemy.pathProgress;
+          if (enemy.pathProgress.toDouble() >= closestDist) {
+            closestDist = enemy.pathProgress.toDouble();
             target = enemy;
           }
         }
@@ -2558,7 +2558,7 @@ class TDGameProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  static Map<String, List<double>> getTowerStats(TDTowerType type) {
+  static Map<String, List<num>> getTowerStats(TDTowerType type) {
     final stats = _towerStats[type]!;
     return {
       'damage': stats.damage,
