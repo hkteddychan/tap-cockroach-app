@@ -64,15 +64,14 @@ jobs:
       - name: Build debug APK
         id: debug_build
         run: |
-          set -x
+          echo "=== BUILD START ==="
           flutter pub get
-          flutter build apk --debug 2>&1 | tee debug_build.log
-          EXIT_CODE=${PIPESTATUS[0]}
-          echo "=== EXIT CODE: $EXIT_CODE ===" >> debug_build.log
-          echo "=== Debug APK files ===" >> debug_build.log
-          find build -name "*.apk" -type f -exec ls -lh {} \; >> debug_build.log 2>&1 || true
-          cat debug_build.log
-          exit $EXIT_CODE
+          flutter build apk --debug 2>&1 | tee build_debug.log
+          echo "EXIT_CODE=$?" >> build_debug.log
+          echo "=== APK FILES ===" >> build_debug.log
+          ls -la build/app/outputs/flutter-apk/ >> build_debug.log 2>&1 || echo "No APK dir" >> build_debug.log
+          echo "=== BUILD END ==="
+          cat build_debug.log
 
       - name: Upload debug APK
         if: success()
@@ -82,25 +81,24 @@ jobs:
           path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 14
 
-      - name: Save debug build log
+      - name: Upload debug build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: debug-build-log
-          path: debug_build.log
+          path: build_debug.log
           retention-days: 3
 
       - name: Build release APK
         id: release_build
         run: |
-          set -x
-          flutter build apk --release 2>&1 | tee release_build.log
-          EXIT_CODE=${PIPESTATUS[0]}
-          echo "=== EXIT CODE: $EXIT_CODE ===" >> release_build.log
-          echo "=== Release APK files ===" >> release_build.log
-          find build -name "*.apk" -type f -exec ls -lh {} \; >> release_build.log 2>&1 || true
-          cat release_build.log
-          exit $EXIT_CODE
+          echo "=== BUILD START ==="
+          flutter build apk --release 2>&1 | tee build_release.log
+          echo "EXIT_CODE=$?" >> build_release.log
+          echo "=== APK FILES ===" >> build_release.log
+          ls -la build/app/outputs/flutter-apk/ >> build_release.log 2>&1 || echo "No APK dir" >> build_release.log
+          echo "=== BUILD END ==="
+          cat build_release.log
 
       - name: Upload release APK
         if: always()
@@ -110,10 +108,10 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
 
-      - name: Save release build log
+      - name: Upload release build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: release-build-log
-          path: release_build.log
+          path: build_release.log
           retention-days: 3
