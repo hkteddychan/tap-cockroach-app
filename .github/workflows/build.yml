@@ -10,7 +10,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,63 +52,23 @@ jobs:
           touch assets/audio/.gitkeep
           touch assets/fonts/.gitkeep
 
-      - name: Debug build info
+      - name: Flutter info
         run: |
           flutter --version
-          flutter doctor -v 2>&1 | tee flutter_doctor.txt
-          flutter analyze --no-fatal-infos --no-fatal-warnings 2>&1 | tee flutter_analyze.txt
-          echo "=== EXIT CODE ===" >> flutter_analyze.txt
-          echo $? >> flutter_analyze.txt
+          flutter doctor -v
 
-      - name: Upload diagnostics
-        uses: actions/upload-artifact@v4
-        with:
-          name: flutter-diagnostics
-          path: |
-            flutter_doctor.txt
-            flutter_analyze.txt
-          retention-days: 3
+      - name: Flutter analyze
+        run: |
+          flutter analyze --no-fatal-infos --no-fatal-warnings || true
 
       - name: Build debug APK
+        id: debug_build
         run: |
-          flutter pub get
-          flutter build apk --debug 2>&1 | tee debug_build.txt
-          echo "EXIT_CODE=$?" >> debug_build.txt
-          echo "=== APK Directory ==="
-          find build -name "*.apk" -type f
-          ls -la build/app/outputs/flutter-apk/ 2>/dev/null || echo "Directory not found"
-
-      - name: Upload debug build log
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-output
-          path: debug_build.txt
-          retention-days: 3
-
-      - name: Debug - Find APK files
-        run: |
-          echo "=== Looking for APK files ==="
-          find . -name "*.apk" -type f 2>/dev/null || echo "No APK found"
-          echo "=== Build dir ==="
-          ls -la build/app/outputs/flutter-apk/ 2>/dev/null || echo "Path not found"
-          echo "=== Alternative paths ==="
-          ls -la build/app/ 2>/dev/null || echo "build/app not found"
-          ls -la build/ 2>/dev/null || echo "build/ not found"
+          flutter build apk --debug
+          echo "=== Debug APK files ==="
+          find build -name "*.apk" -type f -exec ls -lh {} \;
 
       - name: Upload debug APK
-        if: success()
-        run: |
-          APK_PATH=$(find build -name "*.apk" -type f | head -1)
-          echo "Uploading: $APK_PATH"
-          if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
-            echo "APK exists: $(ls -lh $APK_PATH)"
-          else
-            echo "ERROR: No APK found!"
-            exit 1
-          fi
-        continue-on-error: true
-
-      - name: Upload debug APK (v2)
         if: success()
         uses: actions/upload-artifact@v4
         with:
@@ -116,24 +76,12 @@ jobs:
           path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 14
 
-      - name: Upload debug APK (find v2)
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tap-cockroach-debug-alt
-          path: |
-            build/app/outputs/flutter-apk/app-debug.apk
-          retention-days: 14
-          compression-level: 0
-
       - name: Build release APK
-        if: always()
+        id: release_build
         run: |
-          flutter build apk --release 2>&1 | tee release_build.txt
-          echo "EXIT_CODE=$?" >> release_build.txt
-          echo "=== APK Directory ===" 
-          find build -name "*.apk" -type f
-          ls -la build/app/outputs/flutter-apk/ 2>/dev/null || echo "Directory not found"
+          flutter build apk --release
+          echo "=== Release APK files ==="
+          find build -name "*.apk" -type f -exec ls -lh {} \;
 
       - name: Upload release APK
         if: always()
@@ -142,11 +90,3 @@ jobs:
           name: tap-cockroach-release
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
-
-      - name: Upload release build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-output
-          path: release_build.txt
-          retention-days: 3
