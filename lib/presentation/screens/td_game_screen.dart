@@ -12,6 +12,56 @@ import '../../game/audio_service.dart';
 //  Character: 陳蒨妤
 // ═══════════════════════════════════════════════════════════
 
+// Phase 5: Floating text data class
+class _FloatingText {
+  String text;
+  Offset position;
+  Color color;
+  double opacity;
+  double velocityY;
+
+  _FloatingText({
+    required this.text,
+    required this.position,
+    required this.color,
+    this.opacity = 1.0,
+    this.velocityY = -2.0,
+  });
+
+  void update(double dt) {
+    position = Offset(position.dx, position.dy + velocityY);
+    opacity -= dt * 1.2;
+    if (opacity < 0) opacity = 0;
+  }
+}
+
+// Phase 10: Kill particle data class
+class _KillParticle {
+  Offset position;
+  Offset velocity;
+  Color color;
+  double size;
+  double opacity;
+  double life;
+
+  _KillParticle({
+    required this.position,
+    required this.velocity,
+    required this.color,
+    required this.size,
+    this.opacity = 1.0,
+    this.life = 1.0,
+  });
+
+  void update(double dt) {
+    position = Offset(position.dx + velocity.dx * dt * 60, position.dy + velocity.dy * dt * 60);
+    life -= dt * 2.0;
+    opacity = life.clamp(0.0, 1.0);
+    size *= 0.98;
+    if (size < 0.5) size = 0.5;
+  }
+}
+
 class TDGameScreen extends StatefulWidget {
   final int level;
   const TDGameScreen({super.key, required this.level});
@@ -20,7 +70,7 @@ class TDGameScreen extends StatefulWidget {
   State<TDGameScreen> createState() => _TDGameScreenState();
 }
 
-class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMixin {
+class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMixin, WidgetsBindingObserver {
   late TDGameProvider _gameProvider;
   late AudioService _audioService;
   late AnimationController _rippleController;
@@ -33,6 +83,24 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
   int _displayScore = 0;
   int _displayGold = 0;
   double _displayCombo = 1.0;
+  bool _isPaused = false;
+  double _gameSpeed = 1.0;
+  bool _soundEnabled = true;
+
+  // Phase 4: Tower range preview
+  Offset? _towerPreviewPosition;
+
+  // Phase 5: Floating text for gold popups
+  final List<_FloatingText> _floatingTexts = [];
+
+  // Phase 5: Animation controller for floating texts
+  late AnimationController _floatTextController;
+
+  // Phase 10: Kill particles for death effects
+  final List<_KillParticle> _killParticles = [];
+
+  // Phase 10: Screen flash on kill (white overlay)
+  bool _showKillFlash = false;
 
   @override
   void initState() {
@@ -63,12 +131,37 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
         }
       });
     
+    _floatTextController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    )..addListener(() {
+        setState(() {
+          // Update floating texts positions and opacity
+          for (final ft in _floatingTexts) {
+            ft.update(0.05);
+          }
+          _floatingTexts.removeWhere((ft) => ft.opacity <= 0);
+        });
+      });
+    
+    WidgetsBinding.instance.addObserver(this);
     _initGame();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _gameProvider.pauseGame();
+      setState(() => _isPaused = true);
+    } else if (state == AppLifecycleState.resumed) {
+      _gameProvider.resumeGame();
+      setState(() => _isPaused = false);
+    }
   }
 
   Future<void> _initGame() async {
     await _audioService.init();
-    _audioService.playSfx(SoundType.waveStart);
+    if (_soundEnabled) _audioService.playSfx(SoundType.waveStart);
     _gameProvider.startWave();
     _gameProvider.onEnemyKilled = _onEnemyKilled;
     _gameProvider.onEnemyReachEnd = _onEnemyReachEnd;
@@ -77,8 +170,14 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
   }
 
   void _onGameStateChanged() {
-    setState(() {});
-    _updateDisplayValues();
+    setState(() {
+      _updateDisplayValues();
+      // Phase 10: Animate kill particles
+      for (final p in _killParticles) {
+        p.update(0.05);
+      }
+      _killParticles.removeWhere((p) => p.life <= 0);
+    });
   }
 
   void _updateDisplayValues() {
@@ -94,9 +193,11 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _rippleController.dispose();
     _shakeController.dispose();
     _waveAnimController.dispose();
+    _floatTextController.dispose();
     _gameProvider.removeListener(_onGameStateChanged);
     _gameProvider.dispose();
     _audioService.dispose();
@@ -106,7 +207,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
   void _triggerRipple(Offset position) {
     setState(() => _rippleOrigin = position);
     _rippleController.forward(from: 0);
-    _audioService.playSfx(SoundType.tap);
+    if (_soundEnabled) _audioService.playSfx(SoundType.tap);
   }
 
   void _triggerScreenShake() {
@@ -120,13 +221,13 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
       _waveCompleteText = text;
     });
     _waveAnimController.forward(from: 0);
-    _audioService.playSfx(SoundType.waveClear);
+    if (_soundEnabled) _audioService.playSfx(SoundType.waveClear);
   }
 
   void _onEnemyReachEnd(TDEnemy enemy) {
     _gameProvider.loseLife();
     _triggerScreenShake();
-    _audioService.playSfx(SoundType.lifeLost);
+    if (_soundEnabled) _audioService.playSfx(SoundType.lifeLost);
     if (_gameProvider.lives <= 0) {
       _handleGameOver();
     }
@@ -136,15 +237,72 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
     _gameProvider.addGold(enemy.goldReward);
     _gameProvider.addScore(enemy.points);
     _gameProvider.incrementCombo();
-    _audioService.playSfx(SoundType.kill);
+    if (_soundEnabled) _audioService.playSfx(SoundType.kill);
+    
+    // Phase 5: Show floating gold text
+    _addFloatingText(
+      '+${enemy.goldReward} 💰',
+      enemy.position,
+      Colors.amber,
+    );
+    
+    // Phase 10: Spawn kill particles and screen flash
+    _spawnKillParticles(enemy.position, _getEnemyColor(enemy.type));
+    _triggerKillFlash();
+    
     if (_gameProvider.comboCount >= 10) {
-      _audioService.playSfx(SoundType.achievement);
+      if (_soundEnabled) _audioService.playSfx(SoundType.achievement);
+    }
+  }
+
+  // Phase 10: Spawn kill particles at enemy death position
+  void _spawnKillParticles(Offset position, Color color) {
+    final random = Random();
+    for (int i = 0; i < 12; i++) {
+      final angle = random.nextDouble() * 2 * pi;
+      final speed = 2.0 + random.nextDouble() * 4.0;
+      _killParticles.add(_KillParticle(
+        position: position,
+        velocity: Offset(cos(angle) * speed, sin(angle) * speed),
+        color: color,
+        size: 6.0 + random.nextDouble() * 6.0,
+      ));
+    }
+  }
+
+  // Phase 10: Get enemy color by type (helper method)
+  Color _getEnemyColor(TDEnemyType type) {
+    switch (type) {
+      case TDEnemyType.normal: return Colors.brown;
+      case TDEnemyType.fast: return Colors.yellow;
+      case TDEnemyType.tank: return Colors.red;
+      case TDEnemyType.boss: return Colors.deepPurple;
+    }
+  }
+
+  // Phase 10: Trigger white screen flash for 50ms
+  void _triggerKillFlash() {
+    setState(() => _showKillFlash = true);
+    Future.delayed(const Duration(milliseconds: 50), () {
+      if (mounted) setState(() => _showKillFlash = false);
+    });
+  }
+
+  // Phase 5: Add floating text
+  void _addFloatingText(String text, Offset position, Color color) {
+    _floatingTexts.add(_FloatingText(
+      text: text,
+      position: position,
+      color: color,
+    ));
+    if (!_floatTextController.isAnimating) {
+      _floatTextController.forward(from: 0);
     }
   }
 
   void _onTowerPlaced(TDTower tower) {
     _gameProvider.placeTower(tower);
-    _audioService.playSfx(SoundType.placeTower);
+    if (_soundEnabled) _audioService.playSfx(SoundType.placeTower);
     _triggerRipple(tower.position);
   }
 
@@ -214,7 +372,73 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
           // Screen shake wrapper
           if (_shakeController.isAnimating)
             _buildShakeOverlay(),
+          
+          // Phase 10: Kill flash overlay (white screen flash on enemy death)
+          if (_showKillFlash)
+            Container(color: Colors.white.withOpacity(0.3)),
+          
+          // Pause overlay
+          if (_isPaused)
+            _buildPauseOverlay(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPauseOverlay() {
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black.withOpacity(0.7),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.pause_circle_filled,
+                color: Colors.white,
+                size: 80,
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                '⏸️ 遊戲暫停',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 30),
+              GestureDetector(
+                onTap: () {
+                  _gameProvider.resumeGame();
+                  setState(() => _isPaused = false);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
+                  decoration: BoxDecoration(
+                    color: AppTheme.success,
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.play_arrow, color: Colors.white, size: 28),
+                      SizedBox(width: 8),
+                      Text(
+                        '繼續遊戲',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -239,20 +463,193 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
               _hudItem('🌊', '${_gameProvider.currentWave}/${_gameProvider.totalWaves}', Colors.lightBlueAccent),
               _hudItem('💯', '$_displayScore', Colors.white),
               _hudItem('🔥', 'x${_displayCombo.toStringAsFixed(1)}', Colors.orangeAccent),
+              _buildSpeedControl(),
+              _buildPauseButton(),
             ],
           ),
           const SizedBox(height: 8),
-          // Progress bar
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(
-              value: _gameProvider.waveProgress,
-              backgroundColor: AppTheme.surface,
-              valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.success),
-              minHeight: 6,
+          // Wave info bar - Phase 8
+          _buildWaveInfoBar(),
+        ],
+      ),
+    );
+  }
+
+  // Phase 8: Wave info bar showing wave progress, enemies count, next wave preview
+  Widget _buildWaveInfoBar() {
+    final currentWave = _gameProvider.currentWave;
+    final totalWaves = _gameProvider.totalWaves;
+    final enemiesOnField = _gameProvider.enemies.length;
+    final waveProgress = _gameProvider.waveProgress;
+    final nextWavePreview = currentWave < totalWaves ? '第 ${currentWave + 1} 波' : '最終波';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.surface.withOpacity(0.8),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Row(
+        children: [
+          // Wave counter
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '🌊 $currentWave/$totalWaves',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Enemies on field
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('👾', style: TextStyle(fontSize: 12)),
+                const SizedBox(width: 4),
+                Text(
+                  '$enemiesOnField',
+                  style: const TextStyle(
+                    color: Colors.redAccent,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Mini progress bar
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: waveProgress,
+                    backgroundColor: Colors.black38,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      enemiesOnField > 0 ? AppTheme.success : Colors.grey,
+                    ),
+                    minHeight: 6,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  enemiesOnField > 0 ? '消滅敵人中...' : '等待下一波',
+                  style: TextStyle(
+                    color: Colors.white54,
+                    fontSize: 9,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Next wave preview
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.amber.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.amber.withOpacity(0.5)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('➡️', style: TextStyle(fontSize: 11)),
+                const SizedBox(width: 4),
+                Text(
+                  nextWavePreview,
+                  style: const TextStyle(
+                    color: Colors.amber,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSpeedControl() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _speedButton('1x', 1.0),
+        _speedButton('2x', 2.0),
+        _speedButton('5x', 5.0),
+        _speedButton('10x', 10.0),
+      ],
+    );
+  }
+
+  Widget _speedButton(String label, double speed) {
+    final isSelected = _gameSpeed == speed;
+    return GestureDetector(
+      onTap: () {
+        setState(() => _gameSpeed = speed);
+        _gameProvider.setGameSpeed(speed);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.primary.withOpacity(0.7) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: isSelected ? AppTheme.primary : Colors.white30),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.white60,
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPauseButton() {
+    return GestureDetector(
+      onTap: () {
+        if (_isPaused) {
+          _gameProvider.resumeGame();
+        } else {
+          _gameProvider.pauseGame();
+        }
+        setState(() => _isPaused = !_isPaused);
+      },
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: _isPaused ? AppTheme.success.withOpacity(0.5) : Colors.black38,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(
+          _isPaused ? Icons.play_arrow : Icons.pause,
+          color: Colors.white,
+          size: 20,
+        ),
       ),
     );
   }
@@ -294,6 +691,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
 
         if (tappedTower != null) {
           _gameProvider.selectTower(tappedTower);
+          setState(() => _towerPreviewPosition = null);
         } else if (_gameProvider.selectedTowerType != null) {
           if (_gameProvider.gold >= _gameProvider.getTowerCost(_gameProvider.selectedTowerType!)) {
             final tower = _gameProvider.createTower(
@@ -302,9 +700,20 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
             );
             _onTowerPlaced(tower);
           }
+          setState(() => _towerPreviewPosition = null);
         } else {
           _gameProvider.selectTower(null);
+          setState(() => _towerPreviewPosition = null);
         }
+      },
+      // Phase 4: Pan tracking for tower range preview
+      onPanUpdate: (details) {
+        if (_gameProvider.selectedTowerType != null) {
+          setState(() => _towerPreviewPosition = details.localPosition);
+        }
+      },
+      onPanEnd: (_) {
+        setState(() => _towerPreviewPosition = null);
       },
       child: Container(
         margin: const EdgeInsets.all(8),
@@ -315,6 +724,10 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
             projectiles: _gameProvider.projectiles,
             selectedTower: _gameProvider.selectedTower,
             pathPoints: _gameProvider.enemyPath,
+            towerPreviewPosition: _towerPreviewPosition,
+            towerPreviewType: _gameProvider.selectedTowerType,
+            floatingTexts: _floatingTexts,
+            killParticles: _killParticles,
           ),
           size: Size.infinite,
         ),
@@ -335,13 +748,87 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-            '🏗️ 建造塔防',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-            ),
+          // Header with title and control buttons - Phase 9
+          Row(
+            children: [
+              const Text(
+                '🏗️ 建造塔防',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              // Sound toggle button - Phase 9
+              GestureDetector(
+                onTap: () {
+                  setState(() => _soundEnabled = !_soundEnabled);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _soundEnabled ? AppTheme.success.withOpacity(0.3) : Colors.grey.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: _soundEnabled ? AppTheme.success : Colors.grey,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _soundEnabled ? '🔊' : '🔇',
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        _soundEnabled ? '聲音' : '靜音',
+                        style: TextStyle(
+                          color: _soundEnabled ? AppTheme.success : Colors.grey,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Divider
+              Container(
+                width: 1,
+                height: 20,
+                color: Colors.white24,
+              ),
+              const SizedBox(width: 8),
+              // Pause button - Phase 9
+              GestureDetector(
+                onTap: () {
+                  if (_isPaused) {
+                    _gameProvider.resumeGame();
+                  } else {
+                    _gameProvider.pauseGame();
+                  }
+                  setState(() => _isPaused = !_isPaused);
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: _isPaused ? AppTheme.success.withOpacity(0.3) : Colors.grey.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: _isPaused ? AppTheme.success : Colors.grey,
+                    ),
+                  ),
+                  child: Icon(
+                    _isPaused ? Icons.play_arrow : Icons.pause,
+                    color: _isPaused ? AppTheme.success : Colors.white70,
+                    size: 18,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           Row(
@@ -411,20 +898,83 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
   }
 
   Widget _buildTowerInfo(TDTower tower) {
+    final upgradeCost = _gameProvider.getTowerUpgradeCost(tower);
+    final sellValue = _gameProvider.getTowerSellValue(tower);
+    final canUpgrade = tower.level < 3 && _gameProvider.gold >= upgradeCost;
+    
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: AppTheme.surfaceLight,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          _infoChip('⚔️', '${tower.damage}'),
-          _infoChip('📍', '${tower.range.toInt()}'),
-          _infoChip('⏱️', '${tower.fireRate}'),
-          if (tower.type == TDTowerType.slow)
-            _infoChip('❄️', '減速'),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _infoChip('⚔️', '${tower.damage}'),
+              _infoChip('📍', '${tower.range.toInt()}'),
+              _infoChip('⏱️', '${tower.fireRate}'),
+              _infoChip('⬆️', 'Lv${tower.level}'),
+              if (tower.type == TDTowerType.slow)
+                _infoChip('❄️', '減速'),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              // Upgrade button
+              GestureDetector(
+                onTap: canUpgrade
+                    ? () {
+                        _gameProvider.upgradeTower(tower);
+                        HapticFeedback.mediumImpact();
+                      }
+                    : null,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: canUpgrade ? AppTheme.success : Colors.grey,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        tower.level < 3 ? '⬆️ 升級 💰$upgradeCost' : '已滿級',
+                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // Sell button - Phase 7: Prominent red
+              GestureDetector(
+                onTap: () {
+                  _gameProvider.sellTower(tower);
+                  HapticFeedback.mediumImpact();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.error,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.red.shade300, width: 2),
+                    boxShadow: [
+                      BoxShadow(color: AppTheme.error.withOpacity(0.5), blurRadius: 8, spreadRadius: 1),
+                    ],
+                  ),
+                  child: Text(
+                    '🏷️ 出售 +💰$sellValue',
+                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -526,6 +1076,13 @@ class TDGamePainter extends CustomPainter {
   final List<TDProjectile> projectiles;
   final TDTower? selectedTower;
   final List<Offset> pathPoints;
+  // Phase 4: Tower preview
+  final Offset? towerPreviewPosition;
+  final TDTowerType? towerPreviewType;
+  // Phase 5: Floating texts
+  final List<_FloatingText> floatingTexts;
+  // Phase 10: Kill particles
+  final List<_KillParticle> killParticles;
 
   TDGamePainter({
     required this.towers,
@@ -533,15 +1090,29 @@ class TDGamePainter extends CustomPainter {
     required this.projectiles,
     this.selectedTower,
     required this.pathPoints,
+    this.towerPreviewPosition,
+    this.towerPreviewType,
+    required this.floatingTexts,
+    required this.killParticles,
   });
 
+  // Phase 11: Animation time for pulsing effects
+  double _animTime = 0.0;
+  
   @override
   void paint(Canvas canvas, Size size) {
+    _animTime += 0.05;
     _drawPath(canvas);
     _drawTowerRanges(canvas);
     _drawTowers(canvas);
     _drawEnemies(canvas);
     _drawProjectiles(canvas);
+    // Phase 4: Draw tower preview circle
+    _drawTowerPreview(canvas);
+    // Phase 5: Draw floating texts
+    _drawFloatingTexts(canvas);
+    // Phase 10: Draw kill particles
+    _drawKillParticles(canvas);
   }
 
   void _drawPath(Canvas canvas) {
@@ -597,13 +1168,24 @@ class TDGamePainter extends CustomPainter {
     final center = tower.position;
     final color = _getTowerColor(tower.type);
     
+    // Phase 11: Pulsing glow effect on tower base
+    final glowPaint = Paint()
+      ..color = color.withOpacity(0.3 + 0.15 * sin(_animTime * 3))
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, 24 + 2 * sin(_animTime * 3), glowPaint);
+    
     // Tower base
     final basePaint = Paint()
       ..color = color.withOpacity(0.8)
       ..style = PaintingStyle.fill;
     canvas.drawCircle(center, 20, basePaint);
     
-    // Tower body
+    // Phase 11: Tower barrel rotation and muzzle flash
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(tower.targetAngle);
+    
+    // Tower body (rotated with barrel)
     final bodyPaint = Paint()
       ..color = color
       ..style = PaintingStyle.fill;
@@ -611,25 +1193,41 @@ class TDGamePainter extends CustomPainter {
     switch (tower.type) {
       case TDTowerType.basic:
         canvas.drawRect(
-          Rect.fromCenter(center: center, width: 30, height: 30),
+          Rect.fromCenter(center: Offset.zero, width: 30, height: 30),
           bodyPaint,
         );
         break;
       case TDTowerType.sniper:
         // Long barrel
         canvas.drawRect(
-          Rect.fromCenter(center: center.translate(0, -10), width: 10, height: 30),
+          Rect.fromCenter(center: const Offset(0, -10), width: 10, height: 30),
           bodyPaint,
         );
         break;
       case TDTowerType.splash:
         // Wide base
-        canvas.drawCircle(center, 18, bodyPaint);
+        canvas.drawCircle(const Offset(0, 0), 18, bodyPaint);
         break;
       case TDTowerType.slow:
         // Snowflake shape
+        canvas.restore();
         _drawSnowflake(canvas, center, bodyPaint, 15);
         break;
+    }
+    
+    // Muzzle flash effect when firing
+    if (tower.muzzleFlashTime > 0) {
+      final flashPaint = Paint()
+        ..color = Colors.yellow.withOpacity(tower.muzzleFlashTime * 4)
+        ..style = PaintingStyle.fill;
+      if (tower.type != TDTowerType.slow) {
+        canvas.drawCircle(const Offset(15, 0), 8 * tower.muzzleFlashTime, flashPaint);
+        canvas.drawCircle(const Offset(15, 0), 5 * tower.muzzleFlashTime, flashPaint..color = Colors.white);
+      }
+    }
+    
+    if (tower.type != TDTowerType.slow) {
+      canvas.restore();
     }
     
     // Tower icon
@@ -646,6 +1244,9 @@ class TDGamePainter extends CustomPainter {
       center - Offset(iconPainter.width / 2, iconPainter.height / 2),
     );
     
+    // Phase 11: Draw upgrade stars below tower
+    _drawUpgradeStars(canvas, tower);
+    
     // Range indicator when selected
     if (selectedTower?.id == tower.id) {
       final rangePaint = Paint()
@@ -654,6 +1255,39 @@ class TDGamePainter extends CustomPainter {
         ..strokeWidth = 2;
       canvas.drawCircle(center, tower.range, rangePaint);
     }
+  }
+
+  // Phase 11: Draw upgrade stars below tower
+  void _drawUpgradeStars(Canvas canvas, TDTower tower) {
+    if (tower.level <= 0) return;
+    
+    final starCenter = Offset(tower.position.dx, tower.position.dy + 30);
+    
+    for (int i = 0; i < tower.level; i++) {
+      final xOffset = (i - (tower.level - 1) / 2) * 12;
+      final starPos = Offset(starCenter.dx + xOffset, starCenter.dy);
+      final starPaint = Paint()
+        ..color = AppTheme.textGold
+        ..style = PaintingStyle.fill;
+      _drawStar(canvas, starPos, 5, starPaint);
+    }
+  }
+
+  // Phase 11: Helper to draw a star shape
+  void _drawStar(Canvas canvas, Offset center, double size, Paint paint) {
+    final path = Path();
+    for (int i = 0; i < 5; i++) {
+      final angle = (i * 144 - 90) * pi / 180;
+      final x = center.dx + cos(angle) * size;
+      final y = center.dy + sin(angle) * size;
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+    path.close();
+    canvas.drawPath(path, paint);
   }
 
   void _drawSnowflake(Canvas canvas, Offset center, Paint paint, double size) {
@@ -675,9 +1309,31 @@ class TDGamePainter extends CustomPainter {
   void _drawEnemy(Canvas canvas, TDEnemy enemy) {
     final center = enemy.position;
     final healthRatio = enemy.currentHealth / enemy.maxHealth;
-    
-    // Enemy body
     final color = _getEnemyColor(enemy.type);
+    
+    // Phase 11: Pulsing glow on all enemies
+    final glowPaint = Paint()
+      ..color = color.withOpacity(0.4 + 0.2 * sin(_animTime * 4 + enemy.id))
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, 20 + 3 * sin(_animTime * 4 + enemy.id), glowPaint);
+    
+    // Phase 11: Motion trail for fast enemies
+    if (enemy.type == TDEnemyType.fast && enemy.trailPositions.isNotEmpty) {
+      for (int i = 0; i < enemy.trailPositions.length; i++) {
+        final trailPos = enemy.trailPositions[i];
+        final trailOpacity = (1 - i / enemy.trailPositions.length) * 0.4;
+        final trailPaint = Paint()
+          ..color = Colors.yellow.withOpacity(trailOpacity)
+          ..style = PaintingStyle.fill;
+        canvas.drawCircle(trailPos, 8 - i * 1.5, trailPaint);
+      }
+    }
+    
+    // Phase 11: Enemy body with rotation toward movement direction
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(enemy.movementAngle + pi / 2); // + pi/2 to orient correctly
+    
     final bodyPaint = Paint()
       ..color = color
       ..style = PaintingStyle.fill;
@@ -686,49 +1342,68 @@ class TDGamePainter extends CustomPainter {
     switch (enemy.type) {
       case TDEnemyType.normal:
         // Round body
-        canvas.drawCircle(center, 15, bodyPaint);
+        canvas.drawCircle(Offset.zero, 15, bodyPaint);
         break;
       case TDEnemyType.fast:
         // Small and pointy
         final path = Path();
-        path.moveTo(center.dx, center.dy - 12);
-        path.lineTo(center.dx + 10, center.dy + 8);
-        path.lineTo(center.dx - 10, center.dy + 8);
+        path.moveTo(0, -12);
+        path.lineTo(10, 8);
+        path.lineTo(-10, 8);
         path.close();
         canvas.drawPath(path, bodyPaint);
         break;
       case TDEnemyType.tank:
-        // Large square
+        // Large square with shield shimmer
         canvas.drawRect(
-          Rect.fromCenter(center: center, width: 30, height: 30),
+          Rect.fromCenter(center: Offset.zero, width: 30, height: 30),
           bodyPaint,
+        );
+        // Phase 11: Tank shield shimmer
+        final shieldPaint = Paint()
+          ..color = Colors.white.withOpacity(0.3 + 0.2 * sin(_animTime * 6))
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3;
+        canvas.drawRect(
+          Rect.fromCenter(center: Offset.zero, width: 36, height: 36),
+          shieldPaint,
         );
         break;
       case TDEnemyType.boss:
-        // Big with crown
-        canvas.drawCircle(center, 25, bodyPaint);
-        // Crown
-        final crownPaint = Paint()
-          ..color = AppTheme.textGold
-          ..style = PaintingStyle.fill;
-        final crownPath = Path();
-        crownPath.moveTo(center.dx - 20, center.dy - 20);
-        crownPath.lineTo(center.dx - 15, center.dy - 35);
-        crownPath.lineTo(center.dx - 5, center.dy - 25);
-        crownPath.lineTo(center.dx + 5, center.dy - 35);
-        crownPath.lineTo(center.dx + 15, center.dy - 25);
-        crownPath.lineTo(center.dx + 20, center.dy - 20);
-        crownPath.close();
-        canvas.drawPath(crownPath, crownPaint);
+        // Big circle
+        canvas.drawCircle(Offset.zero, 25, bodyPaint);
         break;
     }
     
-    // Health bar background
+    canvas.restore();
+    
+    // Phase 11: Boss crown with shimmer effect
+    if (enemy.type == TDEnemyType.boss) {
+      final crownShimmer = 0.7 + 0.3 * sin(_animTime * 8);
+      final crownPaint = Paint()
+        ..color = AppTheme.textGold.withOpacity(crownShimmer)
+        ..style = PaintingStyle.fill;
+      final crownPath = Path();
+      crownPath.moveTo(center.dx - 20, center.dy - 20);
+      crownPath.lineTo(center.dx - 15, center.dy - 35);
+      crownPath.lineTo(center.dx - 5, center.dy - 25);
+      crownPath.lineTo(center.dx + 5, center.dy - 35);
+      crownPath.lineTo(center.dx + 15, center.dy - 25);
+      crownPath.lineTo(center.dx + 20, center.dy - 20);
+      crownPath.close();
+      canvas.drawPath(crownPath, crownPaint);
+    }
+    
+    // Health bar background - Phase 6: size varies by enemy type
+    final barWidth = _getHealthBarWidth(enemy.type);
+    final barHeight = _getHealthBarHeight(enemy.type);
+    final barYOffset = _getHealthBarYOffset(enemy.type);
+    
     final healthBgPaint = Paint()
       ..color = Colors.black54
       ..style = PaintingStyle.fill;
     canvas.drawRect(
-      Rect.fromCenter(center: center.translate(0, -25), width: 30, height: 4),
+      Rect.fromCenter(center: center.translate(0, barYOffset), width: barWidth, height: barHeight),
       healthBgPaint,
     );
     
@@ -738,10 +1413,10 @@ class TDGamePainter extends CustomPainter {
       ..style = PaintingStyle.fill;
     canvas.drawRect(
       Rect.fromLTWH(
-        center.dx - 15,
-        center.dy - 27,
-        30 * healthRatio,
-        4,
+        center.dx - barWidth / 2,
+        center.dy - barHeight / 2 + barYOffset,
+        barWidth * healthRatio,
+        barHeight,
       ),
       healthPaint,
     );
@@ -755,7 +1430,7 @@ class TDGamePainter extends CustomPainter {
       canvas.drawCircle(center, 18, slowPaint);
     }
     
-    // Enemy icon
+    // Enemy icon (centered, doesn't rotate)
     final iconPainter = TextPainter(
       text: TextSpan(
         text: _getEnemyEmoji(enemy.type),
@@ -837,6 +1512,112 @@ class TDGamePainter extends CustomPainter {
     }
   }
 
+  // Phase 4: Draw tower range preview circle when finger moves
+  void _drawTowerPreview(Canvas canvas) {
+    if (towerPreviewPosition == null || towerPreviewType == null) return;
+    
+    final range = TDGameProvider.getTowerBaseRange(towerPreviewType!);
+    final color = _getTowerColor(towerPreviewType!);
+    
+    // Semi-transparent fill
+    final fillPaint = Paint()
+      ..color = color.withOpacity(0.15)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(towerPreviewPosition!, range, fillPaint);
+    
+    // Border
+    final borderPaint = Paint()
+      ..color = color.withOpacity(0.5)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    canvas.drawCircle(towerPreviewPosition!, range, borderPaint);
+    
+    // Center dot
+    final centerPaint = Paint()
+      ..color = color.withOpacity(0.7)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(towerPreviewPosition!, 15, centerPaint);
+    
+    // Tower icon preview
+    final iconPainter = TextPainter(
+      text: TextSpan(
+        text: _getTowerEmoji(towerPreviewType!),
+        style: const TextStyle(fontSize: 14),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    iconPainter.layout();
+    iconPainter.paint(
+      canvas,
+      towerPreviewPosition! - Offset(iconPainter.width / 2, iconPainter.height / 2),
+    );
+  }
+
+  // Phase 5: Draw floating gold texts
+  void _drawFloatingTexts(Canvas canvas) {
+    for (final ft in floatingTexts) {
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: ft.text,
+          style: TextStyle(
+            color: ft.color.withOpacity(ft.opacity.clamp(0.0, 1.0)),
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            shadows: const [
+              Shadow(color: Colors.black54, blurRadius: 4),
+            ],
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(
+        canvas,
+        ft.position - Offset(textPainter.width / 2, textPainter.height / 2),
+      );
+    }
+  }
+
+  // Phase 10: Draw kill particles (death burst effect)
+  void _drawKillParticles(Canvas canvas) {
+    for (final p in killParticles) {
+      final paint = Paint()
+        ..color = p.color.withOpacity(p.opacity)
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(p.position, p.size, paint);
+    }
+  }
+
+  // Phase 6: Health bar width by enemy type
+  double _getHealthBarWidth(TDEnemyType type) {
+    switch (type) {
+      case TDEnemyType.boss: return 50;
+      case TDEnemyType.tank: return 40;
+      case TDEnemyType.fast: return 24;
+      default: return 30;
+    }
+  }
+
+  // Phase 6: Health bar height by enemy type
+  double _getHealthBarHeight(TDEnemyType type) {
+    switch (type) {
+      case TDEnemyType.boss: return 8;
+      case TDEnemyType.tank: return 6;
+      case TDEnemyType.fast: return 3;
+      default: return 4;
+    }
+  }
+
+  // Phase 6: Health bar Y offset by enemy type
+  double _getHealthBarYOffset(TDEnemyType type) {
+    switch (type) {
+      case TDEnemyType.boss: return -35;
+      case TDEnemyType.tank: return -28;
+      case TDEnemyType.fast: return -20;
+      default: return -25;
+    }
+  }
+
   @override
   bool shouldRepaint(covariant TDGamePainter oldDelegate) => true;
 }
@@ -891,10 +1672,15 @@ class TDTower {
   final int id;
   final TDTowerType type;
   final Offset position;
-  final int damage;
-  final double range;
-  final double fireRate;
+  int damage;
+  double range;
+  double fireRate;
   DateTime? lastFireTime;
+  int level; // Phase 3: Tower level 1-3
+  // Phase 11: Rotation angle toward target
+  double targetAngle;
+  // Phase 11: Muzzle flash timer
+  double muzzleFlashTime;
 
   TDTower({
     required this.id,
@@ -904,6 +1690,9 @@ class TDTower {
     required this.range,
     required this.fireRate,
     this.lastFireTime,
+    this.level = 1,
+    this.targetAngle = 0.0,
+    this.muzzleFlashTime = 0.0,
   });
 }
 
@@ -919,6 +1708,10 @@ class TDEnemy {
   bool isSlowed;
   DateTime? slowEndTime;
   double pathProgress;
+  // Phase 11: Movement direction angle for facing direction
+  double movementAngle;
+  // Phase 11: Motion trail positions for fast enemies
+  List<Offset> trailPositions;
 
   TDEnemy({
     required this.id,
@@ -931,7 +1724,9 @@ class TDEnemy {
     required this.points,
     this.isSlowed = false,
     this.pathProgress = 0,
-  });
+    this.movementAngle = 0.0,
+    List<Offset>? trailPositions,
+  }) : trailPositions = trailPositions ?? [];
 }
 
 class TDProjectile {
@@ -960,6 +1755,8 @@ class TDGameProvider extends ChangeNotifier {
   int currentWave = 0;
   int totalWaves = 10;
   bool isPlaying = true;
+  bool _isPaused = false;
+  double _gameSpeed = 1.0;
 
   // Callbacks to State (set during initState)
   void Function(TDEnemy)? onEnemyKilled;
@@ -1139,10 +1936,21 @@ class TDGameProvider extends ChangeNotifier {
         enemy.pathProgress += 1;
       } else {
         final speed = enemy.isSlowed ? enemy.speed * 0.5 : enemy.speed;
+        // Phase 11: Track movement direction
+        enemy.movementAngle = atan2(dy, dx);
+        
         enemy.position = Offset(
-          enemy.position.dx + (dx / dist) * speed,
-          enemy.position.dy + (dy / dist) * speed,
+          enemy.position.dx + (dx / dist) * speed * _gameSpeed,
+          enemy.position.dy + (dy / dist) * speed * _gameSpeed,
         );
+        
+        // Phase 11: Update trail positions for fast enemies
+        if (enemy.type == TDEnemyType.fast) {
+          enemy.trailPositions.insert(0, enemy.position);
+          if (enemy.trailPositions.length > 5) {
+            enemy.trailPositions.removeLast();
+          }
+        }
       }
       
       // Check slow effect
@@ -1161,6 +1969,12 @@ class TDGameProvider extends ChangeNotifier {
 
   void _updateTowers() {
     for (final tower in towers) {
+      // Phase 11: Decay muzzle flash timer
+      if (tower.muzzleFlashTime > 0) {
+        tower.muzzleFlashTime -= 0.05;
+        if (tower.muzzleFlashTime < 0) tower.muzzleFlashTime = 0;
+      }
+      
       final now = DateTime.now();
       // fireRate = shots per second (e.g. 0.5 = 1 shot every 2 seconds)
       final cooldownMs = (1000 / tower.fireRate).round();
@@ -1211,6 +2025,10 @@ class TDGameProvider extends ChangeNotifier {
     final dy = target.position.dy - tower.position.dy;
     final dist = sqrt(dx * dx + dy * dy);
 
+    // Phase 11: Set tower rotation angle toward target
+    tower.targetAngle = atan2(dy, dx);
+    tower.muzzleFlashTime = 0.15; // 150ms muzzle flash
+
     final projectileType = _getProjectileType(tower.type);
     final projectile = TDProjectile(
       position: tower.position,
@@ -1226,8 +2044,8 @@ class TDGameProvider extends ChangeNotifier {
   void _moveProjectiles() {
     for (final projectile in projectiles) {
       projectile.position = Offset(
-        projectile.position.dx + projectile.direction.dx * projectile.speed,
-        projectile.position.dy + projectile.direction.dy * projectile.speed,
+        projectile.position.dx + projectile.direction.dx * projectile.speed * _gameSpeed,
+        projectile.position.dy + projectile.direction.dy * projectile.speed * _gameSpeed,
       );
     }
 
@@ -1322,14 +2140,66 @@ class TDGameProvider extends ChangeNotifier {
   }
 
   // ─── Tower factory (single source of truth) ───
+  // Phase 3: Stats per level [base, level2, level3]
   static final _towerStats = {
-    TDTowerType.basic:  (cost: 50,  damage: 10, range: 100.0, fireRate: 0.5),
-    TDTowerType.sniper: (cost: 100, damage: 50, range: 200.0, fireRate: 1.5),
-    TDTowerType.splash: (cost: 150, damage: 25, range: 80.0,  fireRate: 0.8),
-    TDTowerType.slow:   (cost: 75,  damage: 5,  range: 120.0, fireRate: 0.3),
+    TDTowerType.basic:  (baseCost: 50,  damage: [10, 15, 22], range: [100.0, 120.0, 140.0], fireRate: [0.5, 0.6, 0.75]),
+    TDTowerType.sniper: (baseCost: 100, damage: [50, 75, 110], range: [200.0, 220.0, 250.0], fireRate: [1.5, 1.8, 2.2]),
+    TDTowerType.splash: (baseCost: 150, damage: [25, 40, 60], range: [80.0, 95.0, 110.0], fireRate: [0.8, 1.0, 1.3]),
+    TDTowerType.slow:   (baseCost: 75,  damage: [5, 8, 12], range: [120.0, 140.0, 160.0], fireRate: [0.3, 0.4, 0.5]),
   };
 
-  int getTowerCost(TDTowerType type) => _towerStats[type]!.cost;
+  int getTowerCost(TDTowerType type) => _towerStats[type]!.baseCost;
+
+  // Phase 4: Get base range for preview
+  static double getTowerBaseRange(TDTowerType type) => _towerStats[type]!.range[0];
+
+  // Phase 3: Get upgrade cost for a tower
+  int getTowerUpgradeCost(TDTower tower) {
+    if (tower.level >= 3) return -1;
+    final baseCost = _towerStats[tower.type]!.baseCost;
+    return (baseCost * 0.6 * tower.level).round();
+  }
+
+  // Phase 3: Get sell value for a tower
+  int getTowerSellValue(TDTower tower) {
+    // Refund 50% of total invested gold
+    final baseCost = _towerStats[tower.type]!.baseCost;
+    int totalInvested = baseCost;
+    for (int l = 1; l < tower.level; l++) {
+      totalInvested += (baseCost * 0.6 * l).round();
+    }
+    return (totalInvested * 0.5).round();
+  }
+
+  // Phase 3: Upgrade tower
+  bool upgradeTower(TDTower tower) {
+    if (tower.level >= 3) return false;
+    final cost = getTowerUpgradeCost(tower);
+    if (gold < cost) return false;
+    
+    gold -= cost;
+    tower.level++;
+    
+    final stats = _towerStats[tower.type]!;
+    tower.damage = stats.damage[tower.level - 1];
+    tower.range = stats.range[tower.level - 1];
+    tower.fireRate = stats.fireRate[tower.level - 1];
+    
+    notifyListeners();
+    return true;
+  }
+
+  // Phase 3: Sell tower
+  bool sellTower(TDTower tower) {
+    final sellValue = getTowerSellValue(tower);
+    gold += sellValue;
+    towers.remove(tower);
+    if (selectedTower?.id == tower.id) {
+      selectedTower = null;
+    }
+    notifyListeners();
+    return true;
+  }
 
   TDTower createTower(TDTowerType type, Offset position) {
     final stats = _towerStats[type]!;
@@ -1337,9 +2207,9 @@ class TDGameProvider extends ChangeNotifier {
       id: DateTime.now().millisecondsSinceEpoch,
       type: type,
       position: position,
-      damage: stats.damage,
-      range: stats.range,
-      fireRate: stats.fireRate,
+      damage: stats.damage[0],
+      range: stats.range[0],
+      fireRate: stats.fireRate[0],
     );
   }
 
@@ -1383,6 +2253,29 @@ class TDGameProvider extends ChangeNotifier {
     combo = 1.0;
     notifyListeners();
   }
+
+  void pauseGame() {
+    _isPaused = true;
+    _gameLoopTimer?.cancel();
+    _enemySpawnTimer?.cancel();
+    notifyListeners();
+  }
+
+  void resumeGame() {
+    _isPaused = false;
+    if (isPlaying) {
+      _startGameLoop();
+    }
+    notifyListeners();
+  }
+
+  void setGameSpeed(double speed) {
+    _gameSpeed = speed;
+    notifyListeners();
+  }
+
+  double get gameSpeed => _gameSpeed;
+  bool get isPaused => _isPaused;
 
   @override
   void dispose() {
