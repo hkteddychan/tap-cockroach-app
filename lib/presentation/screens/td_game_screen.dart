@@ -74,7 +74,7 @@ class TDGameScreen extends StatefulWidget {
 }
 
 class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMixin, WidgetsBindingObserver {
-  late TDGameProvider _gameProvider;
+  late TDGameProvider _tdProvider; // local TD game state
   late AudioService _audioService;
   late AnimationController _rippleController;
   late AnimationController _shakeController;
@@ -124,7 +124,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
   @override
   void initState() {
     super.initState();
-    _gameProvider = widget.gameProvider;
+    _tdProvider = widget.gameProvider;
     _audioService = AudioService();
     
     _rippleController = AnimationController(
@@ -173,17 +173,17 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
       });
 
     // Phase 4: Initialize game provider callbacks
-    _gameProvider.addListener(_onGameStateChanged);
+    _tdProvider.addListener(_onGameStateChanged);
     _initGame();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
-      _gameProvider.pauseGame();
+      _tdProvider.pauseGame();
       setState(() => _isPaused = true);
     } else if (state == AppLifecycleState.resumed) {
-      _gameProvider.resumeGame();
+      _tdProvider.resumeGame();
       setState(() => _isPaused = false);
     }
   }
@@ -192,11 +192,11 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
     await _audioService.init();
     if (_soundEnabled) _audioService.playSfx(SoundType.waveStart);
     _showWaveStartBanner(1);
-    _gameProvider.startWave();
-    _gameProvider.onEnemyKilled = _onEnemyKilled;
-    _gameProvider.onEnemyReachEnd = _onEnemyReachEnd;
-    _gameProvider.onWaveComplete = _handleWaveComplete;
-    _gameProvider.addListener(_onGameStateChanged);
+    _tdProvider.startWave(widget.level);
+    _tdProvider.onEnemyKilled = _onEnemyKilled;
+    _tdProvider.onEnemyReachEnd = _onEnemyReachEnd;
+    _tdProvider.onWaveComplete = _handleWaveComplete;
+    _tdProvider.addListener(_onGameStateChanged);
   }
 
   void _onGameStateChanged() {
@@ -211,15 +211,15 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
   }
 
   void _updateDisplayValues() {
-    _displayScore = _gameProvider.score;
-    _displayGold = _gameProvider.gold;
-    _displayCombo = _gameProvider.combo;
+    _displayScore = _tdProvider.score;
+    _displayGold = _tdProvider.gold;
+    _displayCombo = _tdProvider.combo;
     
     // Check combo timer - reset if 3 seconds without kill
-    if (_gameProvider.comboCount > 0 && _lastKillTime != null) {
+    if (_tdProvider.comboCount > 0 && _lastKillTime != null) {
       final elapsed = DateTime.now().difference(_lastKillTime!).inMilliseconds / 1000.0;
       if (elapsed >= _comboTimeoutSeconds) {
-        _gameProvider.resetCombo();
+        _tdProvider.resetCombo();
       }
     }
   }
@@ -268,13 +268,13 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
   }
 
   void _onTowerPlaced(TDTower tower) {
-    _gameProvider.placeTower(tower);
+    _tdProvider.placeTower(tower);
     if (_soundEnabled) _audioService.playSfx(SoundType.placeTower);
     _triggerRipple(tower.position);
   }
 
   void _handleGameOver() {
-    _gameProvider.isPlaying = false;
+    _tdProvider.isPlaying = false;
     _showWaveCompleteBanner('💀 遊戲結束');
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
@@ -286,7 +286,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
   void _handleWaveComplete() {
     // This wave is done — mark the LEVEL complete (each level = 1 wave)
     final completedLevel = widget.level;
-    final score = _gameProvider.score;
+    final score = _tdProvider.score;
 
     // Mark level complete and unlock next level
     widget.gameProvider.gameState.onLevelComplete(
@@ -315,8 +315,8 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
     _waveAnimController.dispose();
     _floatTextController.dispose();
     _comboAnimController.dispose();
-    _gameProvider.removeListener(_onGameStateChanged);
-    _gameProvider.dispose();
+    _tdProvider.removeListener(_onGameStateChanged);
+    _tdProvider.dispose();
     _audioService.dispose();
     super.dispose();
   }
@@ -350,28 +350,28 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
   }
 
   void _onEnemyKilled(TDEnemy enemy) {
-    _gameProvider.addGold(enemy.goldReward);
-    _gameProvider.addScore(enemy.points);
+    _tdProvider.addGold(enemy.goldReward);
+    _tdProvider.addScore(enemy.points);
     _lastKillTime = DateTime.now(); // Update last kill time for combo timer
-    _gameProvider.incrementCombo();
+    _tdProvider.incrementCombo();
 
     // Track kill streak
     _killStreak++;
     if (_killStreak > 0 && _killStreak % 5 == 0) {
       // Every 5 consecutive kills = +20 gold bonus
-      _gameProvider.addGold(20);
+      _tdProvider.addGold(20);
       _addFloatingText('🔥 連續击杀!\n+20', Offset(enemy.position.dx, enemy.position.dy - 30), Colors.orange);
     }
 
     // Combo milestones
-    final combo = _gameProvider.combo;
+    final combo = _tdProvider.combo;
     if (combo >= 10) {
       _showComboBannerX10();
-      _gameProvider.addGold(50);
+      _tdProvider.addGold(50);
       if (_soundEnabled) _audioService.playSfx(SoundType.achievement);
     } else if (combo >= 5) {
       _showComboBannerMessage('厲害! x5', Colors.orangeAccent);
-      _gameProvider.addGold(10);
+      _tdProvider.addGold(10);
       if (_soundEnabled) _audioService.playSfx(SoundType.achievement);
     } else if (combo >= 3) {
       _showComboBannerMessage('良好! x3', Colors.yellowAccent);
@@ -416,7 +416,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
 
   // Combo timer progress (0.0 to 1.0, depletes over 3 seconds)
   double _getComboTimerProgress() {
-    if (_lastKillTime == null || _gameProvider.comboCount == 0) return 0.0;
+    if (_lastKillTime == null || _tdProvider.comboCount == 0) return 0.0;
     final elapsed = DateTime.now().difference(_lastKillTime!).inMilliseconds / 1000.0;
     return (1.0 - (elapsed / _comboTimeoutSeconds)).clamp(0.0, 1.0);
   }
@@ -503,7 +503,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
               const SizedBox(height: 30),
               GestureDetector(
                 onTap: () {
-                  _gameProvider.resumeGame();
+                  _tdProvider.resumeGame();
                   setState(() => _isPaused = false);
                 },
                 child: Container(
@@ -533,8 +533,8 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
               GestureDetector(
                 onTap: () {
                   // Restart current level
-                  _gameProvider.resetGame();
-                  _gameProvider.startWave();
+                  _tdProvider.resetGame();
+                  _tdProvider.startWave(widget.level);
                   setState(() => _isPaused = false);
                 },
                 child: Container(
@@ -610,7 +610,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _hudItem('❤️', '${_gameProvider.lives}', Colors.pinkAccent),
+              _hudItem('❤️', '${_tdProvider.lives}', Colors.pinkAccent),
               _hudItem('💰', '$_displayGold', AppTheme.textGold),
               _hudItem('🏰', '第${widget.level}關/10', Colors.lightBlueAccent),
               _hudItem('💯', '$_displayScore', Colors.white),
@@ -629,12 +629,12 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
 
   // Phase 8: Wave info bar showing wave progress, enemies count, next wave preview
   Widget _buildWaveInfoBar() {
-    final currentWave = _gameProvider.currentWave;
-    final totalWaves = _gameProvider.totalWaves;
-    final enemiesOnField = _gameProvider.enemies.length;
-    final remaining = _gameProvider.enemiesRemaining;
-    final total = _gameProvider.enemiesThisWave;
-    final waveProgress = _gameProvider.waveProgress;
+    final currentWave = _tdProvider.currentWave;
+    final totalWaves = _tdProvider.totalWaves;
+    final enemiesOnField = _tdProvider.enemies.length;
+    final remaining = _tdProvider.enemiesRemaining;
+    final total = _tdProvider.enemiesThisWave;
+    final waveProgress = _tdProvider.waveProgress;
     final nextWavePreview = currentWave < totalWaves ? '第 ${currentWave + 1} 波' : '最終波';
     final statusText = enemiesOnField > 0
         ? '剩餘 $remaining/$total'
@@ -764,7 +764,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
     return GestureDetector(
       onTap: () {
         setState(() => _gameSpeed = speed);
-        _gameProvider.setGameSpeed(speed);
+        _tdProvider.setGameSpeed(speed);
         if (_soundEnabled) _audioService.playSfx(SoundType.tap);
       },
       child: Container(
@@ -792,7 +792,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
   Widget _buildPauseButton() {
     return GestureDetector(
       onTap: () {
-        _gameProvider.pauseGame();
+        _tdProvider.pauseGame();
         setState(() => _isPaused = true);
         if (_soundEnabled) _audioService.playSfx(SoundType.tap);
       },
@@ -836,7 +836,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
         
         // Check if tapping on existing tower (show range + upgrade panel)
         TDTower? tappedTower;
-        for (final tower in _gameProvider.towers) {
+        for (final tower in _tdProvider.towers) {
           final dx = position.dx - tower.position.dx;
           final dy = position.dy - tower.position.dy;
           if (sqrt(dx * dx + dy * dy) < 25) {
@@ -851,15 +851,15 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
         }
         
         // Check if tower type is selected and valid placement
-        if (_gameProvider.selectedTowerType != null) {
+        if (_tdProvider.selectedTowerType != null) {
           // Check if position is on path
-          if (_gameProvider.isPositionOnPath(position)) {
+          if (_tdProvider.isPositionOnPath(position)) {
             _triggerInvalidPlacementFeedback();
             return;
           }
           
           // Check if position is occupied by another tower
-          for (final tower in _gameProvider.towers) {
+          for (final tower in _tdProvider.towers) {
             final dx = position.dx - tower.position.dx;
             final dy = position.dy - tower.position.dy;
             if (sqrt(dx * dx + dy * dy) < 50) {
@@ -870,7 +870,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
           
           // Place the tower
           final tower = TDTower(
-            type: _gameProvider.selectedTowerType!,
+            type: _tdProvider.selectedTowerType!,
             position: position,
           );
           _onTowerPlaced(tower);
@@ -880,7 +880,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
         setState(() => _towerPreviewPosition = position);
       },
       onPanUpdate: (details) {
-        if (_gameProvider.selectedTowerType != null) {
+        if (_tdProvider.selectedTowerType != null) {
           setState(() => _towerPreviewPosition = details.localPosition);
         }
       },
@@ -889,16 +889,16 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
           // Enemy path and towers rendered via CustomPaint
           CustomPaint(
             painter: TDGamePainter(
-              provider: _gameProvider,
+              provider: _tdProvider,
               rippleOrigin: _rippleOrigin,
               rippleProgress: _rippleController.value,
               shakeOffset: _shakeController.isAnimating
                   ? Offset(sin(_shakeController.value * 20) * 5, 0)
                   : Offset.zero,
-              towerPreviewPosition: _gameProvider.selectedTowerType != null
+              towerPreviewPosition: _tdProvider.selectedTowerType != null
                   ? _towerPreviewPosition
                   : null,
-              towerPreviewType: _gameProvider.selectedTowerType,
+              towerPreviewType: _tdProvider.selectedTowerType,
               floatTexts: _floatingTexts,
               killParticles: _killParticles,
               isPaused: _isPaused,
@@ -911,7 +911,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
   }
 
   void _showTowerInfo(TDTower tower) {
-    _gameProvider.selectedTower = tower;
+    _tdProvider.selectedTower = tower;
     
     showModalBottomSheet(
       context: context,
@@ -921,9 +921,9 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
   }
 
   Widget _buildTowerInfoPanel(TDTower tower) {
-    final upgradeCost = _gameProvider.getTowerUpgradeCost(tower);
-    final sellValue = (_gameProvider.getTowerCost(tower.type) * 0.6).round();
-    final canUpgrade = _gameProvider.gold >= upgradeCost && tower.level < 3;
+    final upgradeCost = _tdProvider.getTowerUpgradeCost(tower);
+    final sellValue = (_tdProvider.getTowerCost(tower.type) * 0.6).round();
+    final canUpgrade = _tdProvider.gold >= upgradeCost && tower.level < 3;
     final towerName = _getTowerChineseName(tower.type);
     final levelStars = '⭐' * tower.level + '☆' * (3 - tower.level);
 
@@ -1018,7 +1018,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
                   onTap: canUpgrade
                       ? () {
                           Navigator.pop(context);
-                          _gameProvider.upgradeTower(tower);
+                          _tdProvider.upgradeTower(tower);
                           if (_soundEnabled) _audioService.playSfx(SoundType.achievement);
                         }
                       : null,
@@ -1064,7 +1064,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
                     tower.position,
                     AppTheme.textGold,
                   );
-                  _gameProvider.sellTower(tower);
+                  _tdProvider.sellTower(tower);
                   if (_soundEnabled) _audioService.playSfx(SoundType.tap);
                 },
                 child: Container(
@@ -1129,15 +1129,15 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
             scrollDirection: Axis.horizontal,
             child: Row(
               children: TDTowerType.values.map((type) {
-                final isSelected = _gameProvider.selectedTowerType == type;
-                final cost = _gameProvider.getTowerCost(type);
-                final canAfford = _gameProvider.gold >= cost;
+                final isSelected = _tdProvider.selectedTowerType == type;
+                final cost = _tdProvider.getTowerCost(type);
+                final canAfford = _tdProvider.gold >= cost;
                 
                 return GestureDetector(
                   onTap: canAfford
                       ? () {
                           setState(() {
-                            _gameProvider.selectedTowerType = isSelected ? null : type;
+                            _tdProvider.selectedTowerType = isSelected ? null : type;
                           });
                           if (_soundEnabled) _audioService.playSfx(SoundType.tap);
                         }
@@ -1186,7 +1186,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
           ),
           const SizedBox(height: 8),
           // Selected tower indicator
-          if (_gameProvider.selectedTowerType != null)
+          if (_tdProvider.selectedTowerType != null)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
@@ -1197,12 +1197,12 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    _getTowerEmoji(_gameProvider.selectedTowerType!),
+                    _getTowerEmoji(_tdProvider.selectedTowerType!),
                     style: const TextStyle(fontSize: 16),
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    _getTowerChineseName(_gameProvider.selectedTowerType!),
+                    _getTowerChineseName(_tdProvider.selectedTowerType!),
                     style: const TextStyle(
                       color: Color(0xFF00D4FF),
                       fontSize: 13,
@@ -2013,11 +2013,12 @@ class TDGameProvider extends ChangeNotifier {
     enemyPath = List.from(_waypoints);
   }
 
-  void startWave() {
+  void startWave([int? level]) {
     isPlaying = true;
-    currentWave = widget.level; // Each level = 1 wave; difficulty based on selected level
+    // Use passed level, or keep current (for wave 1 init)
+    if (level != null) currentWave = level;
     _enemiesSpawnedThisWave = 0;
-    _enemiesPerWave = 10 + (widget.level * 2); // Scale by level, not wave count
+    _enemiesPerWave = 10 + (currentWave * 2); // Scale by level number
 
     // Restart game loop (was cancelled by _checkWaveComplete on previous wave)
     _startGameLoop();
