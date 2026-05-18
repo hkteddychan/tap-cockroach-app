@@ -64,9 +64,15 @@ jobs:
       - name: Build debug APK
         id: debug_build
         run: |
-          flutter build apk --debug
-          echo "=== Debug APK files ==="
-          find build -name "*.apk" -type f -exec ls -lh {} \;
+          set -x
+          flutter pub get
+          flutter build apk --debug 2>&1 | tee debug_build.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "=== EXIT CODE: $EXIT_CODE ===" >> debug_build.log
+          echo "=== Debug APK files ===" >> debug_build.log
+          find build -name "*.apk" -type f -exec ls -lh {} \; >> debug_build.log 2>&1 || true
+          cat debug_build.log
+          exit $EXIT_CODE
 
       - name: Upload debug APK
         if: success()
@@ -76,12 +82,25 @@ jobs:
           path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 14
 
+      - name: Save debug build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-build-log
+          path: debug_build.log
+          retention-days: 3
+
       - name: Build release APK
         id: release_build
         run: |
-          flutter build apk --release
-          echo "=== Release APK files ==="
-          find build -name "*.apk" -type f -exec ls -lh {} \;
+          set -x
+          flutter build apk --release 2>&1 | tee release_build.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "=== EXIT CODE: $EXIT_CODE ===" >> release_build.log
+          echo "=== Release APK files ===" >> release_build.log
+          find build -name "*.apk" -type f -exec ls -lh {} \; >> release_build.log 2>&1 || true
+          cat release_build.log
+          exit $EXIT_CODE
 
       - name: Upload release APK
         if: always()
@@ -90,3 +109,11 @@ jobs:
           name: tap-cockroach-release
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
+
+      - name: Save release build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-build-log
+          path: release_build.log
+          retention-days: 3
