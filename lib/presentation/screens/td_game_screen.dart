@@ -198,6 +198,10 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
     _tdProvider.onEnemyKilled = _onEnemyKilled;
     _tdProvider.onEnemyReachEnd = _onEnemyReachEnd;
     _tdProvider.onWaveComplete = _handleWaveComplete;
+    _tdProvider.onWaveStart = (wave) {
+      _showWaveStartBanner(wave);
+      if (_soundEnabled) _audioService.playSfx(SoundType.waveStart);
+    };
     _tdProvider.addListener(_onGameStateChanged);
   }
 
@@ -536,6 +540,8 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
                 onTap: () {
                   // Restart current level
                   _tdProvider.resetGame();
+                  _showWaveStartBanner(1);
+                  if (_soundEnabled) _audioService.playSfx(SoundType.waveStart);
                   _tdProvider.startWave(widget.level);
                   setState(() => _isPaused = false);
                 },
@@ -1957,6 +1963,7 @@ class TDGameProvider extends ChangeNotifier {
   void Function(TDEnemy)? onEnemyKilled;
   void Function()? onWaveComplete;
   void Function(TDEnemy)? onEnemyReachEnd;
+  void Function(int wave)? onWaveStart; // wave auto-started (1-10)
   
   // Objects
   List<TDTower> towers = [];
@@ -2219,10 +2226,10 @@ class TDGameProvider extends ChangeNotifier {
       TDEnemy? target;
       double closestDist = double.infinity;
 
-      // Global tower: hits all enemies (no range check)
+      // Global tower: hits enemy closest to exit (min pathProgress)
       if (tower.type == TDTowerType.global && enemies.isNotEmpty) {
         for (final enemy in enemies) {
-          if (enemy.pathProgress.toDouble() >= closestDist) {
+          if (enemy.pathProgress <= closestDist) {
             closestDist = enemy.pathProgress.toDouble();
             target = enemy;
           }
@@ -2400,6 +2407,8 @@ class TDGameProvider extends ChangeNotifier {
         currentWave++;
         _enemiesSpawnedThisWave = 0;
         _enemiesPerWave = 10 + (_level * 2);
+        // Show banner + play sound for auto-started wave
+        onWaveStart?.call(currentWave + 1);
         _startGameLoop();
         // Re-spawn enemies for next wave
         final spawnInterval = 2000 - (_level * 100).clamp(0, 1500);
