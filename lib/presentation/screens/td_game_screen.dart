@@ -426,7 +426,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
           _infoChip('📍', '${tower.range.toInt()}'),
           _infoChip('⏱️', '${tower.fireRate}'),
           if (tower.type == TDTowerType.slow)
-            const _infoChip('❄️', '減速'),
+            _infoChip('❄️', '減速'),
         ],
       ),
     );
@@ -977,7 +977,7 @@ class TDEnemy {
 }
 
 class TDProjectile {
-  final Offset position;
+  Offset position;  // mutable — updated in _moveProjectiles()
   final Offset direction;
   final int damage;
   final TDProjectileType type;
