@@ -186,7 +186,11 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
       _displayScore = (_displayScore + ((_gameProvider.score - _displayScore) * 0.2).ceil().clamp(1, 100)).clamp(0, _gameProvider.score);
     }
     if (_displayGold < _gameProvider.gold) {
-      _displayGold = (_displayGold + 1).clamp(0, _gameProvider.gold);
+      // Animate gold: fast catch-up (catch up 20% per frame, minimum 5 per tick)
+      _displayGold = (_displayGold + max(5, ((_gameProvider.gold - _displayGold) * 0.3).ceil())).clamp(0, _gameProvider.gold);
+    } else if (_displayGold > _gameProvider.gold) {
+      // Instant sync when gold decreases (tower placed / upgrade / sell)
+      _displayGold = _gameProvider.gold;
     }
     _displayCombo = _gameProvider.combo;
   }
@@ -1882,21 +1886,24 @@ class TDGameProvider extends ChangeNotifier {
     }
   }
 
+  // Gold reward scales with wave number to keep economy balanced
   int _getEnemyGoldReward(TDEnemyType type) {
+    final waveMultiplier = 1.0 + (currentWave - 1) * 0.15; // +15% per wave
     switch (type) {
-      case TDEnemyType.fast: return 5;
-      case TDEnemyType.tank: return 20;
-      case TDEnemyType.boss: return 50;
-      default: return 10;
+      case TDEnemyType.fast: return (10 * waveMultiplier).round();
+      case TDEnemyType.tank: return (20 * waveMultiplier).round();
+      case TDEnemyType.boss: return (80 * waveMultiplier).round();
+      case TDEnemyType.normal: return (10 * waveMultiplier).round();
     }
   }
 
   int _getEnemyPoints(TDEnemyType type) {
+    final waveMultiplier = 1.0 + (currentWave - 1) * 0.15;
     switch (type) {
-      case TDEnemyType.fast: return 15;
-      case TDEnemyType.tank: return 30;
-      case TDEnemyType.boss: return 100;
-      default: return 10;
+      case TDEnemyType.fast: return (15 * waveMultiplier).round();
+      case TDEnemyType.tank: return (30 * waveMultiplier).round();
+      case TDEnemyType.boss: return (150 * waveMultiplier).round();
+      case TDEnemyType.normal: return (10 * waveMultiplier).round();
     }
   }
 
@@ -2141,11 +2148,12 @@ class TDGameProvider extends ChangeNotifier {
 
   // ─── Tower factory (single source of truth) ───
   // Phase 3: Stats per level [base, level2, level3]
+  // fireRate = shots per second (e.g. 0.5 = 1 shot every 2 seconds)
   static final _towerStats = {
     TDTowerType.basic:  (baseCost: 50,  damage: [10, 15, 22], range: [100.0, 120.0, 140.0], fireRate: [0.5, 0.6, 0.75]),
-    TDTowerType.sniper: (baseCost: 100, damage: [50, 75, 110], range: [200.0, 220.0, 250.0], fireRate: [1.5, 1.8, 2.2]),
-    TDTowerType.splash: (baseCost: 150, damage: [25, 40, 60], range: [80.0, 95.0, 110.0], fireRate: [0.8, 1.0, 1.3]),
-    TDTowerType.slow:   (baseCost: 75,  damage: [5, 8, 12], range: [120.0, 140.0, 160.0], fireRate: [0.3, 0.4, 0.5]),
+    TDTowerType.sniper: (baseCost: 80,  damage: [50, 75, 110], range: [200.0, 220.0, 250.0], fireRate: [1.5, 1.8, 2.2]),
+    TDTowerType.splash: (baseCost: 120, damage: [25, 40, 60], range: [80.0, 95.0, 110.0], fireRate: [0.8, 1.0, 1.3]),
+    TDTowerType.slow:   (baseCost: 60,  damage: [5, 8, 12], range: [120.0, 140.0, 160.0], fireRate: [0.5, 0.6, 0.75]),
   };
 
   int getTowerCost(TDTowerType type) => _towerStats[type]!.baseCost;
@@ -2157,17 +2165,16 @@ class TDGameProvider extends ChangeNotifier {
   int getTowerUpgradeCost(TDTower tower) {
     if (tower.level >= 3) return -1;
     final baseCost = _towerStats[tower.type]!.baseCost;
-    return (baseCost * 0.6 * tower.level).round();
+    // Fixed: upgrade cost is always 60% of base cost (not multiplied by level)
+    return (baseCost * 0.6).round();
   }
 
-  // Phase 3: Get sell value for a tower
+  // Phase 3: Get sell value for a tower (50% of total invested, using fixed upgrade cost)
   int getTowerSellValue(TDTower tower) {
-    // Refund 50% of total invested gold
     final baseCost = _towerStats[tower.type]!.baseCost;
-    int totalInvested = baseCost;
-    for (int l = 1; l < tower.level; l++) {
-      totalInvested += (baseCost * 0.6 * l).round();
-    }
+    final upgradeCost = (baseCost * 0.6).round(); // fixed upgrade cost
+    // Total = base + (level-1) × upgradeCost
+    final totalInvested = baseCost + (tower.level - 1) * upgradeCost;
     return (totalInvested * 0.5).round();
   }
 
