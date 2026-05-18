@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/theme/app_theme.dart';
 import '../../game/audio_service.dart';
+import '../../game/game_provider.dart';
+import '../../data/models/game_models.dart';
 
 // TDProvider, TDTower, TDEnemy, etc. are defined in this file below
 
@@ -64,7 +66,8 @@ class _KillParticle {
 
 class TDGameScreen extends StatefulWidget {
   final int level;
-  const TDGameScreen({super.key, required this.level});
+  final GameProvider gameProvider;
+  const TDGameScreen({super.key, required this.level, required this.gameProvider});
 
   @override
   State<TDGameScreen> createState() => _TDGameScreenState();
@@ -121,7 +124,7 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
   @override
   void initState() {
     super.initState();
-    _gameProvider = TDGameProvider();
+    _gameProvider = widget.gameProvider;
     _audioService = AudioService();
     
     _rippleController = AnimationController(
@@ -281,51 +284,27 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
   }
 
   void _handleWaveComplete() {
-    final completedWave = _gameProvider.currentWave;
-    final nextWave = completedWave + 1;
+    // This wave is done — mark the LEVEL complete (each level = 1 wave)
+    final completedLevel = widget.level;
+    final score = _gameProvider.score;
 
-    // Check for perfect wave bonus (no enemy reached end)
-    if (_perfectWave) {
-      _gameProvider.addGold(50);
-      _addFloatingText('⭐ 完美通關!\n+50', const Offset(300, 150), Colors.amber);
-      if (_soundEnabled) _audioService.playSfx(SoundType.achievement);
-    }
-    _perfectWave = true; // Reset for next wave
-    _killStreak = 0; // Reset kill streak
+    // Mark level complete and unlock next level
+    widget.gameProvider.gameState.onLevelComplete(
+      completedLevel,
+      score,
+      0, // goldenCount (simplified)
+      _perfectWave,
+      0, // timeUsed (simplified)
+    );
+    widget.gameProvider.saveState();
 
-    // Interest on unspent gold: 5% per completed wave (only if not victory)
-    if (nextWave <= _gameProvider.totalWaves) {
-      final interestRate = 0.05;
-      final interestEarned = (_gameProvider.gold * interestRate).round();
-      if (interestEarned > 0) {
-        _gameProvider.addGold(interestEarned);
-        _addFloatingText(
-          '🏦 +\n$interestEarned\n利息 💰',
-          const Offset(300, 100),
-          AppTheme.textGold,
-        );
-      }
-    }
+    // Show victory banner
+    _showWaveCompleteBanner('🏆 第 $completedLevel 關完成！');
+    if (_soundEnabled) _audioService.playSfx(SoundType.gameWin);
 
-    // Reset combo on wave complete
-    _gameProvider.resetComboCount();
-
-    if (nextWave > _gameProvider.totalWaves) {
-      _showWaveCompleteBanner('🏆 勝利！');
-      if (_soundEnabled) _audioService.playSfx(SoundType.gameWin);
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted) Navigator.of(context).pop();
-      });
-    } else {
-      _showWaveCompleteBanner('✅ 第 $completedWave 波完成');
-      if (_soundEnabled) _audioService.playSfx(SoundType.waveClear);
-      Future.delayed(const Duration(milliseconds: 1500), () {
-        if (mounted) {
-          _showWaveStartBanner(nextWave);
-          _gameProvider.startWave();
-        }
-      });
-    }
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) Navigator.of(context).pop();
+    });
   }
 
   @override
@@ -1968,7 +1947,7 @@ class TDGameProvider extends ChangeNotifier {
   double combo = 1.0;
   int comboCount = 0;
   int currentWave = 0;
-  int totalWaves = 5;
+  int totalWaves = 1; // Each level = 1 wave (自選 system)
   bool isPlaying = true;
   bool _isPaused = false;
   double _gameSpeed = 1.0;
@@ -2036,9 +2015,9 @@ class TDGameProvider extends ChangeNotifier {
 
   void startWave() {
     isPlaying = true;
-    currentWave++;
+    currentWave = widget.level; // Each level = 1 wave; difficulty based on selected level
     _enemiesSpawnedThisWave = 0;
-    _enemiesPerWave = 10 + (currentWave * 2);
+    _enemiesPerWave = 10 + (widget.level * 2); // Scale by level, not wave count
 
     // Restart game loop (was cancelled by _checkWaveComplete on previous wave)
     _startGameLoop();
@@ -2192,8 +2171,8 @@ class TDGameProvider extends ChangeNotifier {
         enemy.movementAngle = atan2(dy, dx);
         
         enemy.position = Offset(
-          enemy.position.dx + (dx / dist) * speed * _gameSpeed,
-          enemy.position.dy + (dy / dist) * speed * _gameSpeed,
+          enemy.position.dx + (dx / dist) * speed * _gameSpeed * 20,
+          enemy.position.dy + (dy / dist) * speed * _gameSpeed * 20,
         );
         
         // Update trail positions for fast enemies
