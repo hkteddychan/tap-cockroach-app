@@ -156,14 +156,15 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
   }
 
   void _handleWaveComplete() {
-    final nextWave = _gameProvider.currentWave + 1;
+    final completedWave = _gameProvider.currentWave;
+    final nextWave = completedWave + 1;
     if (nextWave > _gameProvider.totalWaves) {
       _showWaveCompleteBanner('🏆 勝利！');
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted) Navigator.of(context).pop();
       });
     } else {
-      _showWaveCompleteBanner('✅ 第 ${_gameProvider.currentWave} 波完成');
+      _showWaveCompleteBanner('✅ 第 $completedWave 波完成');
       Future.delayed(const Duration(milliseconds: 1500), () {
         _gameProvider.startWave();
       });
@@ -1247,9 +1248,11 @@ class TDGameProvider extends ChangeNotifier {
             enemy.slowEndTime = DateTime.now().add(const Duration(seconds: 2));
           }
           
-          // Apply splash damage
+          // Apply splash damage for explosive projectiles
+          // Splash only affects enemies in 25-50px ring (not the direct-hit target)
           if (projectile.type == TDProjectileType.explosive) {
             for (final other in enemies) {
+              if (other == enemy) continue; // skip direct-hit target
               final odx = other.position.dx - projectile.position.dx;
               final ody = other.position.dy - projectile.position.dy;
               if (sqrt(odx * odx + ody * ody) < 50) {
@@ -1272,6 +1275,7 @@ class TDGameProvider extends ChangeNotifier {
       projectiles.remove(p);
     }
     for (final e in enemiesToRemove) {
+      _onEnemyKilled(e); // play kill/achievement audio + add gold/score
       enemies.remove(e);
     }
   }
