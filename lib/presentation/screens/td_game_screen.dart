@@ -282,26 +282,20 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
     return GestureDetector(
       onTapDown: (details) {
         final pos = details.localPosition;
-        // Check if tapping on a tower to select it
         final tappedTower = _gameProvider.towers.where((t) {
           final dx = t.position.dx - pos.dx;
           final dy = t.position.dy - pos.dy;
           return sqrt(dx * dx + dy * dy) < 30;
         }).firstOrNull;
-        
+
         if (tappedTower != null) {
           _gameProvider.selectTower(tappedTower);
         } else if (_gameProvider.selectedTowerType != null) {
-          // Place new tower
-          final tower = TDTower(
-            id: DateTime.now().millisecondsSinceEpoch,
-            type: _gameProvider.selectedTowerType!,
-            position: pos,
-            damage: _getTowerDamage(_gameProvider.selectedTowerType!),
-            range: _getTowerRange(_gameProvider.selectedTowerType!),
-            fireRate: _getTowerFireRate(_gameProvider.selectedTowerType!),
-          );
-          if (_gameProvider.gold >= _getTowerCost(_gameProvider.selectedTowerType!)) {
+          if (_gameProvider.gold >= _gameProvider.getTowerCost(_gameProvider.selectedTowerType!)) {
+            final tower = _gameProvider.createTower(
+              _gameProvider.selectedTowerType!,
+              pos,
+            );
             _onTowerPlaced(tower);
           }
         } else {
@@ -349,10 +343,10 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _towerButton(TDTowerType.basic, 'Basic', '🔫', 50),
-              _towerButton(TDTowerType.sniper, 'Sniper', '🎯', 100),
-              _towerButton(TDTowerType.splash, 'Splash', '💥', 150),
-              _towerButton(TDTowerType.slow, 'Slow', '❄️', 75),
+              _towerButton(TDTowerType.basic,  'Basic',  '🔫', _gameProvider.getTowerCost(TDTowerType.basic)),
+              _towerButton(TDTowerType.sniper, 'Sniper', '🎯', _gameProvider.getTowerCost(TDTowerType.sniper)),
+              _towerButton(TDTowerType.splash, 'Splash', '💥', _gameProvider.getTowerCost(TDTowerType.splash)),
+              _towerButton(TDTowerType.slow,   'Slow',   '❄️', _gameProvider.getTowerCost(TDTowerType.slow)),
             ],
           ),
           if (_gameProvider.selectedTower != null) ...[
@@ -516,41 +510,6 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
   }
 
   // Tower stats helpers
-  int _getTowerCost(TDTowerType type) {
-    switch (type) {
-      case TDTowerType.basic: return 50;
-      case TDTowerType.sniper: return 100;
-      case TDTowerType.splash: return 150;
-      case TDTowerType.slow: return 75;
-    }
-  }
-
-  int _getTowerDamage(TDTowerType type) {
-    switch (type) {
-      case TDTowerType.basic: return 10;
-      case TDTowerType.sniper: return 50;
-      case TDTowerType.splash: return 25;
-      case TDTowerType.slow: return 5;
-    }
-  }
-
-  double _getTowerRange(TDTowerType type) {
-    switch (type) {
-      case TDTowerType.basic: return 100;
-      case TDTowerType.sniper: return 200;
-      case TDTowerType.splash: return 80;
-      case TDTowerType.slow: return 120;
-    }
-  }
-
-  double _getTowerFireRate(TDTowerType type) {
-    switch (type) {
-      case TDTowerType.basic: return 0.5;
-      case TDTowerType.sniper: return 1.5;
-      case TDTowerType.splash: return 0.8;
-      case TDTowerType.slow: return 0.3;
-    }
-  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -875,12 +834,7 @@ class TDGamePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant TDGamePainter oldDelegate) {
-    return towers != oldDelegate.towers ||
-        enemies != oldDelegate.enemies ||
-        projectiles != oldDelegate.projectiles ||
-        selectedTower != oldDelegate.selectedTower;
-  }
+  bool shouldRepaint(covariant TDGamePainter oldDelegate) => true;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -977,16 +931,18 @@ class TDEnemy {
 }
 
 class TDProjectile {
-  Offset position;  // mutable — updated in _moveProjectiles()
+  Offset position;
   final Offset direction;
   final int damage;
   final TDProjectileType type;
+  final double speed;
 
   TDProjectile({
     required this.position,
     required this.direction,
     required this.damage,
     required this.type,
+    required this.speed,
   });
 }
 
@@ -1023,8 +979,9 @@ class TDGameProvider extends ChangeNotifier {
   final List<Offset> _waypoints = [];
 
   double get waveProgress {
-    if (enemies.isEmpty && _enemiesSpawnedThisWave >= _enemiesPerWave) return 1.0;
-    return 0.0;
+    if (_enemiesPerWave == 0) return 0.0;
+    final killed = _enemiesSpawnedThisWave - enemies.length;
+    return (killed / _enemiesPerWave).clamp(0.0, 1.0);
   }
 
   TDGameProvider() {
@@ -1200,22 +1157,21 @@ class TDGameProvider extends ChangeNotifier {
           now.difference(tower.lastFireTime!).inMilliseconds < (1000 / tower.fireRate).round()) {
         continue;
       }
-      
-      // Find target in range
+
       TDEnemy? target;
       double closestDist = double.infinity;
-      
+
       for (final enemy in enemies) {
         final dx = enemy.position.dx - tower.position.dx;
         final dy = enemy.position.dy - tower.position.dy;
         final dist = sqrt(dx * dx + dy * dy);
-        
+
         if (dist <= tower.range && dist < closestDist) {
           closestDist = dist;
           target = enemy;
         }
       }
-      
+
       if (target != null) {
         _fireTower(tower, target);
         tower.lastFireTime = now;
@@ -1223,20 +1179,12 @@ class TDGameProvider extends ChangeNotifier {
     }
   }
 
-  void _fireTower(TDTower tower, TDEnemy target) {
-    final dx = target.position.dx - tower.position.dx;
-    final dy = target.position.dy - tower.position.dy;
-    final dist = sqrt(dx * dx + dy * dy);
-    
-    final projectile = TDProjectile(
-      position: tower.position,
-      direction: Offset(dx / dist, dy / dist),
-      damage: tower.damage,
-      type: _getProjectileType(tower.type),
-    );
-    
-    projectiles.add(projectile);
-  }
+  static final _projectileSpeeds = {
+    TDProjectileType.bullet:    10.0,
+    TDProjectileType.sniper:    20.0,
+    TDProjectileType.explosive:  8.0,
+    TDProjectileType.ice:        7.0,
+  };
 
   TDProjectileType _getProjectileType(TDTowerType type) {
     switch (type) {
@@ -1247,20 +1195,37 @@ class TDGameProvider extends ChangeNotifier {
     }
   }
 
+  void _fireTower(TDTower tower, TDEnemy target) {
+    final dx = target.position.dx - tower.position.dx;
+    final dy = target.position.dy - tower.position.dy;
+    final dist = sqrt(dx * dx + dy * dy);
+
+    final projectileType = _getProjectileType(tower.type);
+    final projectile = TDProjectile(
+      position: tower.position,
+      direction: Offset(dx / dist, dy / dist),
+      damage: tower.damage,
+      type: projectileType,
+      speed: _projectileSpeeds[projectileType]!,
+    );
+
+    projectiles.add(projectile);
+  }
+
   void _moveProjectiles() {
     for (final projectile in projectiles) {
       projectile.position = Offset(
-        projectile.position.dx + projectile.direction.dx * 10,
-        projectile.position.dy + projectile.direction.dy * 10,
+        projectile.position.dx + projectile.direction.dx * projectile.speed,
+        projectile.position.dy + projectile.direction.dy * projectile.speed,
       );
     }
-    
+
     // Remove off-screen projectiles
-    projectiles.removeWhere((p) => 
-      p.position.dx < 0 || 
-      p.position.dx > 500 || 
-      p.position.dy < 0 || 
-      p.position.dy > 700);
+    projectiles.removeWhere((p) =>
+      p.position.dx < -50 ||
+      p.position.dx > 600 ||
+      p.position.dy < -50 ||
+      p.position.dy > 800);
   }
 
   void _checkProjectileCollisions() {
@@ -1312,8 +1277,12 @@ class TDGameProvider extends ChangeNotifier {
   }
 
   void _removeDeadEnemies() {
-    enemies.removeWhere((e) => 
-      e.currentHealth <= 0 || 
+    final escaped = enemies.where((e) => e.pathProgress >= _waypoints.length - 1).toList();
+    for (final e in escaped) {
+      loseLife();
+    }
+    enemies.removeWhere((e) =>
+      e.currentHealth <= 0 ||
       e.pathProgress >= _waypoints.length - 1);
   }
 
@@ -1327,7 +1296,7 @@ class TDGameProvider extends ChangeNotifier {
   }
 
   void placeTower(TDTower tower) {
-    final cost = _getTowerCost(tower.type);
+    final cost = getTowerCost(tower.type);
     if (gold >= cost) {
       gold -= cost;
       towers.add(tower);
@@ -1335,13 +1304,26 @@ class TDGameProvider extends ChangeNotifier {
     }
   }
 
-  int _getTowerCost(TDTowerType type) {
-    switch (type) {
-      case TDTowerType.basic: return 50;
-      case TDTowerType.sniper: return 100;
-      case TDTowerType.splash: return 150;
-      case TDTowerType.slow: return 75;
-    }
+  // ─── Tower factory (single source of truth) ───
+  static final _towerStats = {
+    TDTowerType.basic:  (cost: 50,  damage: 10, range: 100.0, fireRate: 0.5),
+    TDTowerType.sniper: (cost: 100, damage: 50, range: 200.0, fireRate: 1.5),
+    TDTowerType.splash: (cost: 150, damage: 25, range: 80.0,  fireRate: 0.8),
+    TDTowerType.slow:   (cost: 75,  damage: 5,  range: 120.0, fireRate: 0.3),
+  };
+
+  int getTowerCost(TDTowerType type) => _towerStats[type]!.cost;
+
+  TDTower createTower(TDTowerType type, Offset position) {
+    final stats = _towerStats[type]!;
+    return TDTower(
+      id: DateTime.now().millisecondsSinceEpoch,
+      type: type,
+      position: position,
+      damage: stats.damage,
+      range: stats.range,
+      fireRate: stats.fireRate,
+    );
   }
 
   void selectTowerType(TDTowerType? type) {
