@@ -52,18 +52,11 @@ jobs:
           touch assets/fonts/.gitkeep
 
       - name: Flutter info
-        run: |
-          flutter --version
-          flutter doctor -v
+        run: flutter --version
 
       - name: Build debug APK
         id: build_debug
-        run: |
-          flutter pub get
-          flutter build apk --debug
-          echo "=== APK FILES FOUND ==="
-          find build -name "*.apk" -type f
-          ls -lh build/app/outputs/flutter-apk/ 2>/dev/null || echo "Directory not found"
+        run: flutter build apk --debug
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -74,11 +67,7 @@ jobs:
 
       - name: Build release APK
         id: build_release
-        run: |
-          flutter build apk --release
-          echo "=== APK FILES FOUND ==="
-          find build -name "*.apk" -type f
-          ls -lh build/app/outputs/flutter-apk/ 2>/dev/null || echo "Directory not found"
+        run: flutter build apk --release
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
