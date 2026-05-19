@@ -128,6 +128,10 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
     _tdProvider = TDGameProvider(); // create fresh local TD game provider
     _parentProvider = widget.gameProvider; // parent's provider for level completion
     _audioService = AudioService();
+    // Auto-select Basic Tower so user can immediately place and see shooting work
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _tdProvider.selectedTowerType = TDTowerType.basic);
+    });
     
     _rippleController = AnimationController(
       duration: const Duration(milliseconds: 600),
@@ -1951,7 +1955,7 @@ class TDProjectile {
 class TDGameProvider extends ChangeNotifier {
   // Game state
   int lives = 10;
-  int gold = 100;
+  int gold = 150; // More starting gold so players can place 2-3 towers
   int score = 0;
   double combo = 1.0;
   int comboCount = 0;
@@ -2036,7 +2040,10 @@ class TDGameProvider extends ChangeNotifier {
     _startGameLoop();
 
     // Spawn enemies periodically — interval scales with level (difficulty), not wave number
-    final spawnInterval = 2000 - (_level * 100).clamp(0, 1500);
+    // First wave spawns faster (1200ms) so user sees enemies quickly; difficulty scales with level
+    final spawnInterval = currentWave == 0
+        ? 1200 // Wave 1: fast spawn so user can see enemies immediately
+        : (2000 - (_level * 100)).clamp(500, 2000);
     _enemySpawnTimer?.cancel();
     _enemySpawnTimer = Timer.periodic(Duration(milliseconds: spawnInterval), (_) {
       if (_enemiesSpawnedThisWave < _enemiesPerWave && isPlaying) {
@@ -2412,8 +2419,10 @@ class TDGameProvider extends ChangeNotifier {
         // Show banner + play sound for auto-started wave
         onWaveStart?.call(currentWave + 1);
         _startGameLoop();
-        // Re-spawn enemies for next wave
-        final spawnInterval = 2000 - (_level * 100).clamp(0, 1500);
+        // Re-spawn enemies for next wave — faster spawn for visibility
+        final spawnInterval = currentWave == 0
+            ? 1200
+            : (2000 - (_level * 100)).clamp(500, 2000);
         _enemySpawnTimer?.cancel();
         _enemySpawnTimer = Timer.periodic(Duration(milliseconds: spawnInterval), (_) {
           if (_enemiesSpawnedThisWave < _enemiesPerWave && isPlaying) {
