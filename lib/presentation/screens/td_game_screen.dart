@@ -1989,6 +1989,7 @@ class TDGameProvider extends ChangeNotifier {
   int _enemiesSpawnedThisWave = 0;
   int _enemiesPerWave = 10;
   int _level = 1; // Store level (1-10) for difficulty scaling
+  bool _isFirstWaveStart = true; // Track if current wave is the initial wave (for spawn interval)
   
   // Path waypoints (will be populated in init)
   final List<Offset> _waypoints = [];
@@ -2041,7 +2042,7 @@ class TDGameProvider extends ChangeNotifier {
 
     // Spawn enemies periodically — interval scales with level (difficulty), not wave number
     // First wave spawns faster (1200ms) so user sees enemies quickly; difficulty scales with level
-    final spawnInterval = currentWave == 0
+    final spawnInterval = _isFirstWaveStart
         ? 1200 // Wave 1: fast spawn so user can see enemies immediately
         : (2000 - (_level * 100)).clamp(500, 2000);
     _enemySpawnTimer?.cancel();
@@ -2238,7 +2239,7 @@ class TDGameProvider extends ChangeNotifier {
       // Global tower: hits enemy closest to exit (min pathProgress)
       if (tower.type == TDTowerType.global && enemies.isNotEmpty) {
         for (final enemy in enemies) {
-          if (enemy.pathProgress <= closestDist) {
+          if (enemy.pathProgress < closestDist) {
             closestDist = enemy.pathProgress.toDouble();
             target = enemy;
           }
@@ -2271,6 +2272,20 @@ class TDGameProvider extends ChangeNotifier {
     TDProjectileType.laser:     15.0,
     TDProjectileType.poison:    6.0,
   };
+
+  // Enemy collision radii (half of visual size + projectile radius buffer)
+  static final _collisionRadii = {
+    TDEnemyType.normal: 10.0,  // size 12
+    TDEnemyType.fast:    7.0,  // size 9
+    TDEnemyType.tank:   13.0,  // size 16
+    TDEnemyType.boss:   16.0,  // size 22
+    TDEnemyType.poison:  9.0,  // size 11
+    TDEnemyType.elite:  11.0,  // size 14
+    TDEnemyType.swarm:   7.0,  // size 8
+  };
+
+  static double _getCollisionRadius(TDEnemyType type) =>
+      _collisionRadii[type] ?? 10.0;
 
   TDProjectileType _getProjectileType(TDTowerType type) {
     switch (type) {
@@ -2329,7 +2344,7 @@ class TDGameProvider extends ChangeNotifier {
         final dy = projectile.position.dy - enemy.position.dy;
         final dist = sqrt(dx * dx + dy * dy);
         
-        if (dist < 20) {
+        if (dist < _getCollisionRadius(enemy.type)) {
           enemy.currentHealth -= projectile.damage;
           
           if (projectile.type == TDProjectileType.ice) {
@@ -2407,6 +2422,7 @@ class TDGameProvider extends ChangeNotifier {
   }
 
   void _checkWaveComplete() {
+    if (!isPlaying) return;
     if (_enemiesSpawnedThisWave >= _enemiesPerWave &&
         enemies.isEmpty &&
         _enemySpawnTimer?.isActive != true) {
@@ -2414,13 +2430,14 @@ class TDGameProvider extends ChangeNotifier {
       // Auto-progress through waves 1-10
       if (currentWave < totalWaves - 1) {
         currentWave++;
+        _isFirstWaveStart = false; // After first wave, use clamped spawn interval
         _enemiesSpawnedThisWave = 0;
         _enemiesPerWave = 10 + (_level * 2);
         // Show banner + play sound for auto-started wave
         onWaveStart?.call(currentWave + 1);
         _startGameLoop();
         // Re-spawn enemies for next wave — faster spawn for visibility
-        final spawnInterval = currentWave == 0
+        final spawnInterval = _isFirstWaveStart
             ? 1200
             : (2000 - (_level * 100)).clamp(500, 2000);
         _enemySpawnTimer?.cancel();
@@ -2560,7 +2577,7 @@ class TDGameProvider extends ChangeNotifier {
 
   void resetGame() {
     lives = 10;
-    gold = 100;
+    gold = 150; // Match startWave() starting gold
     score = 0;
     combo = 1.0;
     comboCount = 0;
