@@ -2353,7 +2353,7 @@ class TDGameProvider extends ChangeNotifier {
             enemy.slowEndTime = DateTime.now().add(const Duration(seconds: 2));
           }
           
-          if (projectile.type == TDProjectileType.poison && enemy.currentHealth - projectile.damage <= 0) {
+          if (projectile.type == TDProjectileType.poison && enemy.currentHealth <= 0) {
             _spawnToxicEnemy(enemy);
           }
           
