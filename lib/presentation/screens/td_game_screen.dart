@@ -2185,12 +2185,13 @@ class TDGameProvider extends ChangeNotifier {
       final dy = targetPos.dy - enemy.position.dy;
       final dist = sqrt(dx * dx + dy * dy);
       
-      if (dist < 5) {
+      if (dist < 3) {
         enemy.pathProgress += 1;
       } else {
         final speed = enemy.isSlowed ? enemy.speed * 0.5 : enemy.speed;
         enemy.movementAngle = atan2(dy, dx);
         
+        // Always move enemy (even if far from waypoint, just move towards it)
         enemy.position = Offset(
           enemy.position.dx + (dx / dist) * speed * _gameSpeed * 20,
           enemy.position.dy + (dy / dist) * speed * _gameSpeed * 20,
@@ -2273,15 +2274,15 @@ class TDGameProvider extends ChangeNotifier {
     TDProjectileType.poison:    6.0,
   };
 
-  // Enemy collision radii (half of visual size + projectile radius buffer)
+  // Enemy collision radii (increased for reliable hit detection)
   static final _collisionRadii = {
-    TDEnemyType.normal: 10.0,  // size 12
-    TDEnemyType.fast:    7.0,  // size 9
-    TDEnemyType.tank:   13.0,  // size 16
-    TDEnemyType.boss:   16.0,  // size 22
-    TDEnemyType.poison:  9.0,  // size 11
-    TDEnemyType.elite:  11.0,  // size 14
-    TDEnemyType.swarm:   7.0,  // size 8
+    TDEnemyType.normal: 15.0,  // size 12
+    TDEnemyType.fast:   12.0,  // size 9
+    TDEnemyType.tank:   18.0,  // size 16
+    TDEnemyType.boss:   22.0,  // size 22
+    TDEnemyType.poison: 14.0,  // size 11
+    TDEnemyType.elite:  16.0,  // size 14
+    TDEnemyType.swarm:  12.0,  // size 8
   };
 
   static double _getCollisionRadius(TDEnemyType type) =>
