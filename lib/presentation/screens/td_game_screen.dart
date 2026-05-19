@@ -541,6 +541,8 @@ class _TDGameScreenState extends State<TDGameScreen> with TickerProviderStateMix
                   // Restart current level
                   _tdProvider.resetGame();
                   _showWaveStartBanner(1);
+                  _perfectWave = true; // reset perfect flag on restart
+                  _killStreak = 0;
                   if (_soundEnabled) _audioService.playSfx(SoundType.waveStart);
                   _tdProvider.startWave(widget.level);
                   setState(() => _isPaused = false);
