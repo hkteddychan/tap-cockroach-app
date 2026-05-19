@@ -1930,8 +1930,11 @@ class TDEnemy {
     this.isSlowed = false,
     this.slowEndTime,
     this.movementAngle = 0,
-    this.trailPositions = const [],
-  });
+    this.trailPositions = const [],  // Note: Dart const [] is immutable, but we replace it below
+  }) {
+    // Replace with mutable list to allow insert/removeLast in _moveEnemies
+    trailPositions = [];
+  }
 }
 
 class TDProjectile {
@@ -2586,6 +2589,7 @@ class TDGameProvider extends ChangeNotifier {
     isPlaying = true;
     _isPaused = false;
     _gameSpeed = 1.0;
+    _isFirstWaveStart = true; // Reset spawn interval flag
     towers.clear();
     enemies.clear();
     projectiles.clear();
